@@ -1,4 +1,10 @@
 pluginManagement {
+    // jitpack no longer serves the pinned preprocessor build (API says ok, files 404),
+    // so build the plugin from source: git clone replaymod/preprocessor next to this repo
+    // and check out 1678b67.
+    if (file("../preprocessor/build.gradle.kts").exists()) {
+        includeBuild("../preprocessor")
+    }
     repositories {
         maven("https://maven.fabricmc.net")
         mavenCentral()
