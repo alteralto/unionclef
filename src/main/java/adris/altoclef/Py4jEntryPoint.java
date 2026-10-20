@@ -5954,6 +5954,44 @@ public class Py4jEntryPoint {
         }, Map.of("ok", false, "reason", "client thread timeout"));
     }
 
+    /** A favourite thing the bot keeps in hand on the ground (Пыхтун: a piece of obsidian from
+     *  home). After a landing it takes the place of the rockets, an empty hand takes it between
+     *  tasks, and tidyInventory never throws it. A blank item clears it. hold: take it in hand
+     *  now -- not in flight, in a salute or a fight. Survival needs it carried; creative can
+     *  creativeGive it first. Returns ok, item, carried (count in the inventory), held, and the
+     *  reason when hold was asked and it is not in hand. */
+    public Map<String, Object> setFavoriteItem(String itemId, boolean hold) {
+        return onClientThread(() -> {
+            Map<String, Object> out = new HashMap<>();
+            if (itemId == null || itemId.isBlank()) {
+                adris.altoclef.util.agent.ElytraFlight.setFavorite(null);
+                out.put("ok", true); out.put("item", ""); out.put("carried", 0); out.put("held", false);
+                return out;
+            }
+            net.minecraft.item.Item item = itemById(itemId);
+            if (item == null) { out.put("ok", false); out.put("reason", "unknown item " + itemId); return out; }
+            adris.altoclef.util.agent.ElytraFlight.setFavorite(item);
+            out.put("ok", true);
+            out.put("item", net.minecraft.registry.Registries.ITEM.getId(item).toString());
+            var me = MinecraftClient.getInstance().player;
+            int carried = 0;
+            if (me != null) {
+                var inv = me.getInventory();
+                for (int i = 0; i < 36; i++) if (inv.getStack(i).isOf(item)) carried += inv.getStack(i).getCount();
+            }
+            out.put("carried", carried);
+            String why = hold ? adris.altoclef.util.agent.ElytraFlight.holdFavorite() : null;
+            out.put("held", me != null && me.getMainHandStack().isOf(item));
+            if (why != null) out.put("reason", why);
+            return out;
+        }, Map.of("ok", false, "reason", "client thread timeout"));
+    }
+
+    private static boolean isFavorite(net.minecraft.item.ItemStack st) {
+        net.minecraft.item.Item fav = adris.altoclef.util.agent.ElytraFlight.favorite();
+        return fav != null && st.isOf(fav);
+    }
+
     /** "cake" or "minecraft:cake" to the item, null when there is no such item. */
     private static net.minecraft.item.Item itemById(String itemId) {
         if (itemId == null || itemId.isBlank()) return null;
@@ -6092,6 +6130,7 @@ public class Py4jEntryPoint {
                     if (st.isEmpty()) continue;
                     String id = net.minecraft.registry.Registries.ITEM.getId(st.getItem()).getPath();
                     Integer cap = TIDY_KEEP_STACKS.get(id);
+                    if (cap == null && isFavorite(st)) cap = 1; // one lucky stone is plenty
                     if (cap == null) continue;
                     int n = seen.merge(id, 1, Integer::sum);
                     if (n > cap) spare.add(i);
@@ -6110,7 +6149,7 @@ public class Py4jEntryPoint {
                 net.minecraft.item.ItemStack st = inv.getStack(i);
                 if (st.isEmpty()) continue;
                 String id = net.minecraft.registry.Registries.ITEM.getId(st.getItem()).getPath();
-                if (TIDY_KEEP.contains(id)) continue;
+                if (TIDY_KEEP.contains(id) || isFavorite(st)) continue;
                 int slot = i < 9 ? 36 + i : i;
                 if (creative) {
                     inv.setStack(i, net.minecraft.item.ItemStack.EMPTY);

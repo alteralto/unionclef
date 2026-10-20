@@ -74,6 +74,10 @@ public final class ElytraFlight {
     private static int routeIdx;
     private static boolean registered;
     private static int handCheck;
+    // A favourite thing to hold on the ground (setFavorite): rockets put away after a landing used
+    // to land on whatever block sat in the hotbar -- obsidian, near home -- and the character took
+    // it up as his lucky stone. null: the old pick, an empty slot, else a block.
+    private static volatile Item favorite;
 
     private static final int TIMEOUT_TICKS = 20 * 180;
 
@@ -240,6 +244,7 @@ public final class ElytraFlight {
         if (p == null) return;
         var inv = p.getInventory();
         if (!inv.getStack(PlayerVer.getSelectedSlot(inv)).isOf(Items.FIREWORK_ROCKET)) return;
+        if (selectFavorite(p)) return; // harmless too, and on purpose
         // An empty slot, else a block, else anything that is not a rocket: with a hotbar of tools
         // and food the rockets stayed in hand, and every click on a door or a sign on the way
         // launched one off the ground.
@@ -255,6 +260,67 @@ public final class ElytraFlight {
         }
         if (block >= 0) PlayerVer.setSelectedSlot(inv, block);
         else if (other >= 0) PlayerVer.setSelectedSlot(inv, other);
+    }
+
+    public static void setFavorite(Item item) {
+        favorite = item;
+    }
+
+    public static Item favorite() {
+        return favorite;
+    }
+
+    /** Select the favourite when it is carried: its hotbar slot, else it is swapped from the main
+     *  inventory into an empty hotbar slot. False when none is set, none is carried, or the hotbar
+     *  has no room (a full hotbar is not reshuffled for it). */
+    private static boolean selectFavorite(ClientPlayerEntity p) {
+        Item fav = favorite;
+        if (fav == null) return false;
+        var inv = p.getInventory();
+        int empty = -1;
+        for (int i = 0; i < 9; i++) {
+            var st = inv.getStack(i);
+            if (st.isOf(fav)) {
+                PlayerVer.setSelectedSlot(inv, i);
+                return true;
+            }
+            if (empty < 0 && st.isEmpty()) empty = i;
+        }
+        var mc = MinecraftClient.getInstance();
+        // An open container has its own handler: a click on the player's would be ignored.
+        if (empty < 0 || mc.interactionManager == null || p.currentScreenHandler != p.playerScreenHandler) return false;
+        for (int i = 9; i < 36; i++) {
+            if (!inv.getStack(i).isOf(fav)) continue;
+            // A number key over the slot in the inventory screen; main 9..35 keeps its index there.
+            mc.interactionManager.clickSlot(p.playerScreenHandler.syncId, i, empty, SlotActionType.SWAP, p);
+            PlayerVer.setSelectedSlot(inv, empty);
+            return true;
+        }
+        return false;
+    }
+
+    /** Take the favourite in hand now, client thread. Null when it is in hand, else why not: only
+     *  on the ground and between flights -- never instead of the rockets of a flight or a salute,
+     *  or the sword of a fight. */
+    public static String holdFavorite() {
+        var p = MinecraftClient.getInstance().player;
+        Item fav = favorite;
+        if (p == null) return "not in game";
+        if (fav == null) return "no favorite";
+        if (p.getMainHandStack().isOf(fav)) return null;
+        Phase ph = phase;
+        if (ph != Phase.IDLE && ph != Phase.DONE && ph != Phase.FAILED) return "flying";
+        if (adris.altoclef.multiversion.entity.LivingEntityVer.isGliding(p) || !p.isOnGround()) return "in the air";
+        if (Salute.status().get("phase").equals("firing")) return "salute";
+        if (defending()) return "defending";
+        return selectFavorite(p) ? null : "not carried";
+    }
+
+    /** Mob defense has the controls: it picks the weapon, the favourite must not take its place. */
+    private static boolean defending() {
+        var mod = adris.altoclef.AltoClef.getInstance();
+        return mod != null && mod.getTaskRunner() != null
+                && mod.getTaskRunner().getCurrentTaskChain() == mod.getMobDefenseChain();
     }
 
     private static void tick(MinecraftClient client) {
@@ -432,8 +498,9 @@ public final class ElytraFlight {
         if (o.arrived) finish(rescue ? "glided down" : "arrived");
     }
 
-    /** Between flights, while the agent drives: no rockets in hand on the ground, once a second.
-     *  Not while the player steers by hand -- they may be about to take off themselves. */
+    /** Between flights, while the agent drives: no rockets in hand on the ground, once a second,
+     *  and an empty hand takes the favourite. Not while the player steers by hand -- they may be
+     *  about to take off themselves. */
     private static void keepRocketsOutOfHand(MinecraftClient client) {
         var p = client.player;
         if (p == null || ++handCheck % 20 != 0) return;
@@ -442,6 +509,7 @@ public final class ElytraFlight {
         if (!agentDrives || Salute.status().get("phase").equals("firing")) return;
         if (adris.altoclef.multiversion.entity.LivingEntityVer.isGliding(p)) return;
         if (p.getMainHandStack().isOf(Items.FIREWORK_ROCKET)) putRocketsAway();
+        else if (p.getMainHandStack().isEmpty() && favorite != null && p.isOnGround() && !defending()) selectFavorite(p);
     }
 
     /** Between flights: open the wings in a long fall; land a glide that is ours. */

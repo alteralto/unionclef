@@ -292,9 +292,15 @@ public class McpServer {
                 "Creative mode only: put count of an item (e.g. 'firework_rocket', 'elytra') into free "
                 + "inventory slots, like taking it from the creative tab. ok=false with reason otherwise.",
                 schema("item:string", "count:int"), a -> api.creativeGive(argStr(a, "item"), argInt(a, "count")));
+        tool("setFavoriteItem",
+                "A favourite item the bot keeps in hand on the ground (e.g. 'obsidian'): after a landing it "
+                + "replaces the rockets, an empty hand takes it, tidyInventory keeps it; '' clears. Optional "
+                + "hold=true takes it in hand now (not in flight, a salute or a fight). Returns ok, item, "
+                + "carried, held; reason when not held.",
+                schema("item:string"), a -> api.setFavoriteItem(argStr(a, "item"), a.has("hold") && argBool(a, "hold")));
         tool("tidyInventory",
                 "Free inventory slots until keepFree are empty. Creative: empties non-kit slots (elytra, "
-                + "fireworks, paper, gunpowder stay). Survival: throws only junk blocks (dirt, cobble...).",
+                + "fireworks, paper, gunpowder and the favourite item stay). Survival: throws only junk blocks (dirt, cobble...).",
                 schema("keepFree:int"), a -> api.tidyInventory(argInt(a, "keepFree")));
         tool("dropItem",
                 "Leave a treasure: drop up to count of an item (e.g. 'cake', 'golden_apple') on the ground "
