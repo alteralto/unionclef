@@ -602,8 +602,19 @@ public final class ElytraFlight {
     }
 
     /** Nearest column within radius with open sky at about the bot's level (no canopy, no roof,
-     *  ground within 3 blocks up or down): a place to take off from. Null when none. */
+     *  ground within 3 blocks up or down): a place to take off from. In creative, failing that,
+     *  an open column lower down. Null when none. */
     private static net.minecraft.util.math.BlockPos nearestOpenSky(MinecraftClient client, ClientPlayerEntity p, int radius) {
+        var level = nearestOpenSky(client, p, radius, false);
+        if (level != null || !p.getAbilities().creativeMode) return level;
+        // Creative takes no fall damage: from blocks hanging under a platform every column
+        // around drops far down, and walking off that edge is a fine way out to the sky.
+        return nearestOpenSky(client, p, radius, true);
+    }
+
+    /** One pass of nearestOpenSky; drops accepts open columns any depth below the bot. */
+    private static net.minecraft.util.math.BlockPos nearestOpenSky(MinecraftClient client, ClientPlayerEntity p,
+                                                                     int radius, boolean drops) {
         int px = p.getBlockX(), pz = p.getBlockZ();
         for (int r = 1; r <= radius; r++) {
             net.minecraft.util.math.BlockPos best = null;
@@ -615,8 +626,10 @@ public final class ElytraFlight {
                     if (!client.world.getChunkManager().isChunkLoaded(x >> 4, z >> 4)) continue;
                     int topY = client.world.getTopY(Heightmap.Type.MOTION_BLOCKING, x, z);
                     // Open: nothing above a one-block step over the feet (a low roof next to the
-                    // bot is no way out), and not a pit far below.
-                    if (topY > p.getY() + 1 || topY < p.getY() - 3) continue;
+                    // bot is no way out), and not a pit far below (unless drops are fine).
+                    if (topY > p.getY() + 1 || (!drops && topY < p.getY() - 3)) continue;
+                    // No ground at all is the void, not a way out.
+                    if (drops && topY <= client.world.getBottomY()) continue;
                     var ground = client.world.getBlockState(new net.minecraft.util.math.BlockPos(x, topY - 1, z));
                     if (!ground.getFluidState().isEmpty() || ground.isIn(net.minecraft.registry.tag.BlockTags.LEAVES)) continue;
                     double d = dx * dx + dz * dz;
