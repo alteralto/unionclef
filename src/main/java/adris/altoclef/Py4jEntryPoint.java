@@ -6053,6 +6053,7 @@ public class Py4jEntryPoint {
             if (me.currentScreenHandler != me.playerScreenHandler) me.closeHandledScreen();
             // A throw flies along the look and the server knows the look only from move packets:
             // look down and say so now, so the stack lands at the feet, not a few blocks ahead.
+            float pitch = me.getPitch();
             me.setPitch(90f);
             //#if MC >= 12102
             //$$ client.getNetworkHandler().sendPacket(new net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket.LookAndOnGround(
@@ -6082,6 +6083,15 @@ public class Py4jEntryPoint {
                     }
                 }
             }
+            // Then the old look back, or it walks off staring at its boots.
+            me.setPitch(pitch);
+            //#if MC >= 12102
+            //$$ client.getNetworkHandler().sendPacket(new net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket.LookAndOnGround(
+            //$$         me.getYaw(), pitch, me.isOnGround(), me.horizontalCollision));
+            //#else
+            client.getNetworkHandler().sendPacket(new net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket.LookAndOnGround(
+                    me.getYaw(), pitch, me.isOnGround()));
+            //#endif
             out.put("ok", dropped > 0);
             out.put("dropped", dropped);
             if (creative) out.put("given", given);
