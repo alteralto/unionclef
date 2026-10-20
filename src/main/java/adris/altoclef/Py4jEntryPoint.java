@@ -5934,17 +5934,9 @@ public class Py4jEntryPoint {
             var me = client.player;
             if (me == null || client.interactionManager == null) { out.put("ok", false); out.put("reason", "not in game"); return out; }
             if (!me.getAbilities().creativeMode) { out.put("ok", false); out.put("reason", "not creative"); return out; }
-            net.minecraft.util.Identifier id = net.minecraft.util.Identifier.tryParse(
-                    itemId.contains(":") ? itemId : "minecraft:" + itemId);
-            // getOrEmpty: Registries.get(Identifier) changed shape in 1.21.2 and the preprocessor
-            // maps it onto getEntry, which returns a reference, not the item.
-            net.minecraft.item.Item item = id == null ? null
-                    : net.minecraft.registry.Registries.ITEM.getOrEmpty(id).orElse(null);
-            if (item == null || item == net.minecraft.item.Items.AIR) {
-                out.put("ok", false); out.put("reason", "unknown item " + itemId); return out;
-            }
+            net.minecraft.item.Item item = itemById(itemId);
+            if (item == null) { out.put("ok", false); out.put("reason", "unknown item " + itemId); return out; }
             int left = Math.max(1, Math.min(count, 64 * 9));
-            int given = 0;
             var inv = me.getInventory();
             // Already carried (or worn): nothing more. Every take-off asked for 64 rockets and
             // filled a new slot each time until the whole inventory was rockets.
@@ -5954,19 +5946,109 @@ public class Py4jEntryPoint {
                 out.put("ok", true); out.put("given", 0); out.put("had", had);
                 return out;
             }
-            for (int i = 0; i < 36 && left > 0; i++) {
-                if (!inv.getStack(i).isEmpty()) continue;
-                int n = Math.min(left, item.getMaxCount());
-                net.minecraft.item.ItemStack stack = new net.minecraft.item.ItemStack(item, n);
-                inv.setStack(i, stack.copy());
-                // Player screen handler: hotbar 0..8 is slot 36..44, main 9..35 keeps its index.
-                client.interactionManager.clickCreativeStack(stack, i < 9 ? 36 + i : i);
-                left -= n;
-                given += n;
-            }
+            int given = creativeFill(client, me, item, left);
             out.put("ok", given > 0);
             out.put("given", given);
             if (given == 0) out.put("reason", "inventory full");
+            return out;
+        }, Map.of("ok", false, "reason", "client thread timeout"));
+    }
+
+    /** "cake" or "minecraft:cake" to the item, null when there is no such item. */
+    private static net.minecraft.item.Item itemById(String itemId) {
+        if (itemId == null || itemId.isBlank()) return null;
+        String s = itemId.strip().toLowerCase(java.util.Locale.ROOT);
+        net.minecraft.util.Identifier id = net.minecraft.util.Identifier.tryParse(
+                s.contains(":") ? s : "minecraft:" + s);
+        // getOrEmpty: Registries.get(Identifier) changed shape in 1.21.2 and the preprocessor
+        // maps it onto getEntry, which returns a reference, not the item.
+        net.minecraft.item.Item item = id == null ? null
+                : net.minecraft.registry.Registries.ITEM.getOrEmpty(id).orElse(null);
+        return item == net.minecraft.item.Items.AIR ? null : item;
+    }
+
+    /** Creative, client thread: put up to count of item into empty main-inventory slots with
+     *  the creative tab packet. Returns how many were given (0 when the inventory is full). */
+    private static int creativeFill(MinecraftClient client, net.minecraft.client.network.ClientPlayerEntity me,
+                                    net.minecraft.item.Item item, int count) {
+        var inv = me.getInventory();
+        int left = count, given = 0;
+        for (int i = 0; i < 36 && left > 0; i++) {
+            if (!inv.getStack(i).isEmpty()) continue;
+            int n = Math.min(left, item.getMaxCount());
+            net.minecraft.item.ItemStack stack = new net.minecraft.item.ItemStack(item, n);
+            inv.setStack(i, stack.copy());
+            // Player screen handler: hotbar 0..8 is slot 36..44, main 9..35 keeps its index.
+            client.interactionManager.clickCreativeStack(stack, i < 9 ? 36 + i : i);
+            left -= n;
+            given += n;
+        }
+        return given;
+    }
+
+    /** Leave a treasure: drop up to count of an item on the ground at the bot's feet, as a real
+     *  item entity a player can pick up. The throw is the inventory screen's Q over a slot
+     *  (THROW click on the player screen handler), which the server takes in survival and in
+     *  creative alike, so the stack really leaves the bot. Creative first tops the inventory up
+     *  from the creative tab when it carries fewer than count. */
+    public Map<String, Object> dropItem(String itemId, int count) {
+        return onClientThread(() -> {
+            Map<String, Object> out = new HashMap<>();
+            MinecraftClient client = MinecraftClient.getInstance();
+            var me = client.player;
+            if (me == null || client.interactionManager == null || client.getNetworkHandler() == null) {
+                out.put("ok", false); out.put("reason", "not in game"); return out;
+            }
+            net.minecraft.item.Item item = itemById(itemId);
+            if (item == null) { out.put("ok", false); out.put("reason", "unknown item " + itemId); return out; }
+            String name = net.minecraft.registry.Registries.ITEM.getId(item).toString();
+            out.put("item", name);
+            int want = Math.max(1, Math.min(count, 64 * 9));
+            boolean creative = me.getAbilities().creativeMode;
+            var inv = me.getInventory();
+            int had = 0;
+            for (int i = 0; i < 36; i++) if (inv.getStack(i).isOf(item)) had += inv.getStack(i).getCount();
+            int given = 0;
+            if (had < want && creative) given = creativeFill(client, me, item, want - had);
+            // An open container has its own handler and sync id; the server ignores a click on
+            // the player handler then. Closing it puts the player handler back.
+            if (me.currentScreenHandler != me.playerScreenHandler) me.closeHandledScreen();
+            // A throw flies along the look and the server knows the look only from move packets:
+            // look down and say so now, so the stack lands at the feet, not a few blocks ahead.
+            me.setPitch(90f);
+            //#if MC >= 12102
+            //$$ client.getNetworkHandler().sendPacket(new net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket.LookAndOnGround(
+            //$$         me.getYaw(), 90f, me.isOnGround(), me.horizontalCollision));
+            //#else
+            client.getNetworkHandler().sendPacket(new net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket.LookAndOnGround(
+                    me.getYaw(), 90f, me.isOnGround()));
+            //#endif
+            int dropped = 0;
+            // Main inventory first, the hotbar last: the stack in hand is what the bot is using.
+            for (int k = 0; k < 36 && dropped < want; k++) {
+                int i = k < 27 ? k + 9 : k - 27;
+                net.minecraft.item.ItemStack st = inv.getStack(i);
+                if (!st.isOf(item)) continue;
+                int slot = i < 9 ? 36 + i : i;
+                int n = st.getCount();
+                if (n <= want - dropped) {
+                    // Button 1: the whole stack as one entity, like Ctrl+Q.
+                    client.interactionManager.clickSlot(me.playerScreenHandler.syncId, slot, 1,
+                            net.minecraft.screen.slot.SlotActionType.THROW, me);
+                    dropped += n;
+                } else {
+                    // Button 0 throws one at a time; they merge into one entity on the ground.
+                    for (; dropped < want; dropped++) {
+                        client.interactionManager.clickSlot(me.playerScreenHandler.syncId, slot, 0,
+                                net.minecraft.screen.slot.SlotActionType.THROW, me);
+                    }
+                }
+            }
+            out.put("ok", dropped > 0);
+            out.put("dropped", dropped);
+            if (creative) out.put("given", given);
+            out.put("pos", me.getBlockX() + "," + me.getBlockY() + "," + me.getBlockZ());
+            if (dropped == 0) out.put("reason", creative ? "inventory full" : "no " + name + " in inventory");
             return out;
         }, Map.of("ok", false, "reason", "client thread timeout"));
     }
