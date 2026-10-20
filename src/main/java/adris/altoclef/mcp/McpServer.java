@@ -296,6 +296,11 @@ public class McpServer {
                 "Free inventory slots until keepFree are empty. Creative: empties non-kit slots (elytra, "
                 + "fireworks, paper, gunpowder stay). Survival: throws only junk blocks (dirt, cobble...).",
                 schema("keepFree:int"), a -> api.tidyInventory(argInt(a, "keepFree")));
+        tool("dropItem",
+                "Leave a treasure: drop up to count of an item (e.g. 'cake', 'golden_apple') on the ground "
+                + "at the bot's feet for a player to pick up. Go there first (hoverTo/gotoXYZ). Creative takes "
+                + "missing items from the creative tab. Returns ok, dropped, item, pos; reason when ok=false.",
+                schema("item:string", "count:int"), a -> api.dropItem(argStr(a, "item"), argInt(a, "count")));
         tool("setBuildPolicy",
                 "Shared-server manners: breakOnlyNatural=true mines only dirt/grass/sand/gravel/leaves/"
                 + "snow/plants (never builds); allowPlace=false never places blocks. Optional "
