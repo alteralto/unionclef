@@ -38,6 +38,7 @@ public final class ElytraFlight {
     private static double tx, ty, tz;
     private static int ticks, takeoffTicks, boostCooldown, rocketsUsed;
     private static int glideWait;
+    private static volatile int lastRocketTick = -1000;
     private static final ElytraPilot pilot = new ElytraPilot();
     private static boolean pilotReady;
     private static volatile ElytraPilot.Out lastOut;
@@ -88,6 +89,8 @@ public final class ElytraFlight {
         if (!registered) {
             ClientTickEvents.END_CLIENT_TICK.register(ElytraFlight::tick);
             ClientTickEvents.END_CLIENT_TICK.register(CreativeWingman::tick);
+            ClientTickEvents.END_CLIENT_TICK.register(FlightViz::tick);
+            ClientTickEvents.END_CLIENT_TICK.register(FlightLog::tick);
             registered = true;
         }
     }
@@ -179,9 +182,23 @@ public final class ElytraFlight {
         bestDist = Double.MAX_VALUE;
         bestTick = 0;
         lastOut = null;
+        lastRocketTick = -1000;
         reason = "";
         phase = Phase.EQUIP;
+        FlightViz.newFlight();
         return status();
+    }
+
+    /** What the flight drawing needs, read on the client thread (FlightViz). */
+    record View(boolean on, double tx, double ty, double tz, double[][] route, int routeIdx, String leader,
+                ElytraPilot.Mode mode, int ticksSinceRocket) {
+    }
+
+    static View view() {
+        Phase ph = phase;
+        ElytraPilot.Out o = lastOut;
+        boolean on = ph == Phase.EQUIP || ph == Phase.TAKEOFF || ph == Phase.FLYING;
+        return new View(on, tx, ty, tz, route, routeIdx, leader, o == null ? null : o.mode, ticks - lastRocketTick);
     }
 
     public static void stop() {
@@ -836,6 +853,8 @@ public final class ElytraFlight {
         if (!p.getMainHandStack().isOf(Items.FIREWORK_ROCKET)) return false;
         client.interactionManager.interactItem(p, Hand.MAIN_HAND);
         rocketsUsed++;
+        lastRocketTick = ticks;
+        FlightViz.rocket(p.getX(), p.getY(), p.getZ());
         boostCooldown = 10; // the pilot paces rockets; this only stops double clicks
         return true;
     }

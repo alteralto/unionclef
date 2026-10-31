@@ -5916,6 +5916,21 @@ public class Py4jEntryPoint {
         return adris.altoclef.util.agent.SwimToShore.status();
     }
 
+    /** Game-only video to <game dir>/recordings/<name>.mp4 (FrameRecorder); fps up to 20. */
+    public Map<String, Object> recordStart(String name, int fps) {
+        return onClientThread(() -> adris.altoclef.util.agent.FrameRecorder.start(name, fps),
+                Map.<String, Object>of("ok", false, "reason", "no client thread"));
+    }
+
+    /** The last n ticks of gliding (FlightLog): to check the elytra physics model against the game. */
+    public Map<String, Object> flightLog(int n) {
+        return adris.altoclef.util.agent.FlightLog.last(n);
+    }
+
+    public Map<String, Object> recordStop() {
+        return adris.altoclef.util.agent.FrameRecorder.stop();
+    }
+
     public Map<String, Object> flyStop() {
         adris.altoclef.util.agent.ElytraFlight.stop();
         adris.altoclef.util.agent.CreativeWingman.stop("stopped");

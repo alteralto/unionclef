@@ -198,6 +198,10 @@ public class TungstenConfig {
     @Grouped(group = "visuals", name = "combat", desc = "aim and arrow trajectories")
     public boolean renderCombat = true;
 
+    /** Draw flights: target, route, trail by mode, predicted glide, rockets, wingman slot. */
+    @Grouped(group = "visuals", name = "flight", desc = "elytra and creative flight: trail, predicted glide, rockets")
+    public boolean renderFlight = true;
+
     /** Max time (ms) for A* input search before emitting bestSoFar.
      *  Higher = better routes on parkour, lower = faster response.
      *  Upstream default: 1800. Our default: 15000 (parkour needs more time). */
