@@ -414,6 +414,13 @@ public final class ElytraFlight {
                 }
                 aim(p, tx - p.getX(), tz - p.getZ(), -10);
                 if (p.isOnGround()) {
+                    // The rocket in hand before the jump: a swap from the main inventory lands a
+                    // tick later, and a glide that waited for it touched the ground -- the server
+                    // closes the wings on a touch, and the boost then carried a falling bot.
+                    if (!p.getMainHandStack().isOf(Items.FIREWORK_ROCKET)) {
+                        holdInHotbar(client, p, Items.FIREWORK_ROCKET);
+                        return;
+                    }
                     p.jump();
                     glideSent = false;
                     glideWait = 0;
