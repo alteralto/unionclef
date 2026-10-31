@@ -196,6 +196,7 @@ public final class ElytraFlight {
         plan = null;
         solverSteered = false;
         rings = false;
+        ringMiss.clear();
         reason = "";
         phase = Phase.EQUIP;
         FlightViz.newFlight();
@@ -215,7 +216,6 @@ public final class ElytraFlight {
         route = centres;
         routeIdx = 0;
         rings = true;
-        ringMiss.clear();
         return status();
     }
 
@@ -792,10 +792,7 @@ public final class ElytraFlight {
                 terrainAhead(client, p), top(client, p.getX(), p.getZ()), obstacleAhead(client, p));
         double gapNow = Math.hypot(Math.hypot(lx - p.getX(), lz - p.getZ()), ly - p.getY());
         if (solverOn() && gapNow > 14) {
-            // Where the leader will be in a second, a few blocks behind them on their track.
-            double sp = Math.max(Math.hypot(Math.hypot(lvx, lvz), lvy), 1e-6);
-            steer(client, p, o, new net.minecraft.util.math.Vec3d(lx + lvx * 20 - lvx / sp * 6,
-                    ly + lvy * 20 - lvy / sp * 6, lz + lvz * 20 - lvz / sp * 6));
+            steer(client, p, o, followSlot(client, p, lx, ly, lz));
         } else if (solverSteered) {
             solverSteered = false;
         }
@@ -958,6 +955,31 @@ public final class ElytraFlight {
     private static boolean solverOn() {
         var mod = adris.altoclef.AltoClef.getInstance();
         return mod != null && mod.getModSettings().isElytraSolver();
+    }
+
+    /** Where to chase a leader to: where they will be in a second, 6 blocks behind on their track and
+     *  5 to one side -- the side from this player's name, so two pursuers keep apart (on one point
+     *  they flew wing in wing and landed 0.2 blocks apart, 01.11) -- pushed off any other glider
+     *  within 10 blocks. */
+    private static net.minecraft.util.math.Vec3d followSlot(MinecraftClient client, ClientPlayerEntity p,
+                                                            double lx, double ly, double lz) {
+        double sp = Math.max(Math.hypot(Math.hypot(lvx, lvz), lvy), 1e-6), hs = Math.max(Math.hypot(lvx, lvz), 1e-6);
+        double side = (p.getName().getString().hashCode() & 1) == 0 ? 5 : -5;
+        double gx = lx + lvx * 20 - lvx / sp * 6 - lvz / hs * side;
+        double gy = ly + lvy * 20 - lvy / sp * 6;
+        double gz = lz + lvz * 20 - lvz / sp * 6 + lvx / hs * side;
+        for (var other : client.world.getPlayers()) {
+            if (other == p || other.getName().getString().equalsIgnoreCase(leader)
+                    || !adris.altoclef.multiversion.entity.LivingEntityVer.isGliding(other)) continue;
+            double dx = p.getX() - other.getX(), dy = p.getY() - other.getY(), dz = p.getZ() - other.getZ();
+            double d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (d < 10 && d > 1e-3) {
+                gx += dx / d * (10 - d) * 1.5;
+                gy += dy / d * (10 - d) * 1.5;
+                gz += dz / d * (10 - d) * 1.5;
+            }
+        }
+        return new net.minecraft.util.math.Vec3d(gx, gy, gz);
     }
 
     /** A rocket's price for the solver, in blocks of progress (see Settings.elytraRocketCost). */

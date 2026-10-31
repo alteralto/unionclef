@@ -249,6 +249,10 @@ public class McpServer {
                 schema("x:int", "y:int", "z:int"),
                 a -> api.flyTo(argInt(a, "x"), argInt(a, "y"), argInt(a, "z"),
                         a.has("low") && a.get("low").getAsBoolean(), a.has("tricks") ? a.get("tricks").getAsInt() : 0));
+        tool("camera", "Camera for recordings: perspective (int) 0 first person, 1 from behind, 2 from the front; "
+                        + "hud (bool) false hides the HUD.",
+                schema(), a -> api.camera(a.has("perspective") ? a.get("perspective").getAsInt() : 0,
+                        !a.has("hud") || a.get("hud").getAsBoolean()));
         tool("flyRings",
                 "Elytra through rings: centres \"x,y,z;x,y,z;...\" in order, each crossed square to the way in; "
                 + "lands 60 blocks past the last. flyStatus: waypoint k/n, ringMiss (blocks off centre per ring).",

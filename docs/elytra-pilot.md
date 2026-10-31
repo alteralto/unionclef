@@ -4,6 +4,9 @@ How the bot flies: `ElytraFlight` (the controller in the game: kit, take-off, se
 watchdogs) drives `ElytraPilot` (pure flight logic, no Minecraft classes, so the offline bench in
 `tools/elytra` runs the very same code against a copy of vanilla glide physics).
 
+The route and the pursuit can also fly on tungsten's physics and trajectory solver (setting
+`elytraSolver`; rings always do): `docs/features/ELYTRA_TUNGSTEN.md`.
+
 The pilot flies like a plane rather than a rocket on a stick: it holds a flight-path angle (gamma)
 with a P+I loop, moves the controls at a limited rate, and treats fireworks as a throttle.
 
