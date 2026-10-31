@@ -1451,6 +1451,96 @@ class EscapeLavaPool(EscapeLava):
         return self.HALF + 0.3 < d < 9.0
 
 
+class EscapeLavaStep(EscapeLavaPool):
+    """A lava pit sunk one block into the floor: every way out is a step UP from inside the lava.
+
+    WHY (2026-10-27, repro-lava-stuck-cell on 0.95.65). The bot burned to death 0.9 blocks from the
+    shore of the portal-site pool: the escape route was two waypoints, the second a block higher,
+    and BlockPathWalker jumps only from the ground -- floating in lava it never is, so it walked
+    into the shore face at zero speed ("wlk i1/2 d0.9 wp(-250,26,1105) g0 j0"). escape_lava and
+    escape_lava_pool keep the lava level with the ground and never ask for that step.
+    """
+    id = "escape_lava_step"
+    HALF = 1
+    DEPTH = 1   # lava layers below the shore's standing level
+    ESCAPE_KIT = []   # rcon lines after the clear, {name} = bot
+
+    def drive_start(self, ctx):
+        ctx.rcon.cmd("time set day")
+        ctx.rcon.cmd("gamerule spawn_monsters false", allow_reject=True)
+        ctx.rcon.cmd(f"clear {ctx.bot.name}", allow_reject=True)
+        ctx.rcon.cmd(f"spawnpoint {ctx.bot.name} 10 {STAND_Y} 10", allow_reject=True)
+        for line in self.ESCAPE_KIT:
+            ctx.rcon.cmd(line.format(name=ctx.bot.name), allow_reject=True)
+        h, d = self.HALF, self.DEPTH
+        # Solid under the pit (the stand carves air below the arena), lava from the floor layer down.
+        ctx.rcon.cmd(f"fill {-h} {FLOOR_Y - d} {-h} {h} {FLOOR_Y - d} {h} minecraft:stone", allow_reject=True)
+        ctx.rcon.cmd(f"fill {-h} {FLOOR_Y - d + 1} {-h} {h} {FLOOR_Y} {h} minecraft:lava", allow_reject=True)
+        ctx.geo["fps"] = []
+        ctx.geo["min_hp"] = 20.0
+        ctx.geo["entered"] = False
+        time.sleep(1)
+        ctx.bot.py.try_call("resetRunCounters")
+        ctx.bot.cmd("@get oak_log 1")
+        time.sleep(2)
+        self._start_escape_observation(ctx)
+        ctx.rcon.cmd(f"tp {ctx.bot.name} 0.5 {FLOOR_Y} 0.5", allow_reject=True)
+        ctx.rcon.cmd(f"effect give {ctx.bot.name} minecraft:resistance 120 4 true",
+                     allow_reject=True)
+
+
+class EscapeLavaDeep(EscapeLavaStep):
+    """escape_lava_step two deep: the shore is level with the lava's surface and the bot floats --
+    never on the ground -- which is the state the 0.95.65 death was in (g0 on every walker line).
+
+    INFO, NOT GATE: 0/3 on 0.95.65 and 0/2 with the walker liquid jump -- the walker never gets a
+    route here; the block route "dead-ends" and the physics search cannot leave lava. Three layers
+    found and patched in artifacts/lava-approach-20261027/physics-lava-escape.patch (Node prunes
+    every lava node and its children; floating in lava gets the airborne generator, which never
+    offers jump; 2e6 per lava tick swamps the heuristic): the failure moved from "Ran out of nodes"
+    to "no route within 2000 ms", still 0/2, so the patch is not in the build. Open.
+    """
+    id = "escape_lava_deep"
+    tier = "info"
+    DEPTH = 2
+
+
+class EscapeLavaDeepKit(EscapeLavaDeep):
+    """escape_lava_deep with blocks in the pack, as the 0.95.65 death had: the escape then builds
+    a route (pillar/bridge/break) and the walker gets a short route whose next waypoint is a block
+    up from the floating body. The A/B for walkerJumpsInLiquid."""
+    id = "escape_lava_deep_kit"
+    tier = "gate"
+    ESCAPE_KIT = ["give {name} cobblestone 32"]
+    ESCAPE_WITHIN_S = 20
+
+    def judge(self, ctx):
+        yield from super().judge(ctx)
+        # Resistance keeps both arms alive, so survival alone cannot tell them apart; time in the
+        # lava can. Measured 2026-10-27: walkerJumpsInLiquid off 43.7/27.9/24.0 s, on 8.7/15.7/6.0 s.
+        t = ctx.geo.get("escaped_at")
+        yield Criterion(f"out of the lava within {self.ESCAPE_WITHIN_S} s",
+                        t is not None and float(t) <= self.ESCAPE_WITHIN_S,
+                        f"escaped_at={t}", load_sensitive=True)
+
+
+class EscapeLavaDeepFed(EscapeLavaDeepKit):
+    """escape_lava_deep_kit with food in the pack and a few hunger points gone, as in the 0.95.65
+    death (Cooked Mutton in hand 0.9 blocks from the shore). EscapeFromLavaTask ate whenever hunger
+    was below 20, and eating holds use, which cuts movement to a fifth. The A/B for
+    lavaEscapeEatsOnlyOutOfLava.
+
+    MEASURED 2026-10-27, 8 runs per arm: eat-anywhere 4.0/5.6/5.9/14.0/15.5/15.6/17.6/27.3 s,
+    eat-out-of-lava 3.4/5.6/5.7/6.1/15.5/15.7/15.7 s + one stuck at the centre. Both arms split
+    ~5 s / ~15 s, so something else sets the time; no win shown, the change is not in the build
+    (artifacts/lava-eat-20261027/escape-eat-out-of-lava.patch). The stuck run is the
+    escape_lava_deep mode, and it can reach escape_lava_deep_kit too (1 in 8 here)."""
+    id = "escape_lava_deep_fed"
+    tier = "info"
+    ESCAPE_KIT = ["give {name} cobblestone 32", "give {name} cooked_mutton 8",
+                  "effect give {name} minecraft:hunger 1 100 true"]
+
+
 class PickupDrop(CraftTable):
     """Walk to ONE dropped item and touch it. Nothing else -- no ore, no crafting, no tools.
 
@@ -1785,8 +1875,89 @@ class PortalLavaLake(Scenario):
                       ("walkWalkerAtStop", "walkWalkerStopped")}
             yield Criterion("builder walk ownership (recorded)", True, str(counts), gate=False)
 
+
+class LavaFarLake(Scenario):
+    """A FAR LAKE BEHIND A CROWD OF CAPPED LAVA (2026-10-26).
+
+    BlockScanner keeps only the 40 nearest positions of a block. Here 45 lava sources sit within
+    eight blocks of the bot, each under a bedrock cap that isSafeSourceLiquid rejects, and the only
+    takeable lava is an open 5x5 lake ~28 blocks off. A native30 run on 0.95.63 wandered 7+ minutes
+    "searching for liquid" beside such a lake. Gate: a lava bucket in the pack, alive.
+    """
+    id = "lava_far_lake"
+    tier = "gate"
+    needs_victim = False
+    duration = 150
+    # Mainhand first: "give" fills the first empty slot, which IS the mainhand, and the replace
+    # would then delete the bucket (the first version of this course did exactly that).
+    bot_kit = ["item replace entity {name} weapon.mainhand with iron_pickaxe", "give {name} bucket 1"]
+
+    def build(self, arena, ctx):
+        arena.flat_field(half=34, grass=False)
+        arena._fill(-34, FLOOR_Y - 3, -34, 34, FLOOR_Y - 1, 34, "stone")
+        n = 0
+        for x in range(-8, 9, 2):
+            for z in range(-8, 9, 2):
+                if abs(x) <= 1 and abs(z) <= 1:
+                    continue
+                if n >= 45:
+                    break
+                arena._fill(x, FLOOR_Y, z, x, FLOOR_Y, z, "lava")
+                arena._fill(x, STAND_Y, z, x, STAND_Y, z, "bedrock")
+                n += 1
+        arena._fill(26, FLOOR_Y, -2, 30, FLOOR_Y, 2, "lava")
+        ctx.geo["capped"] = n
+        ctx.geo["bot_spawn"] = f"0.5 {STAND_Y} 0.5 -90 0"
+
+    def drive_start(self, ctx):
+        ctx.rcon.cmd("time set day")
+        ctx.rcon.cmd("gamerule spawn_monsters false", allow_reject=True)
+        ctx.geo["t0"] = time.time()
+        ctx.bot.cmd("@get lava_bucket 1")
+
+    def _buckets(self, ctx):
+        m = re.search(r"(\d+) matching", ctx.rcon.cmd(f"clear {ctx.bot.name} lava_bucket 0", allow_reject=True))
+        return int(m.group(1)) if m else 0
+
+    def drive_tick(self, ctx, elapsed):
+        if ctx.geo.get("got_at") is None and self._buckets(ctx) > 0:
+            ctx.geo["got_at"] = time.time() - ctx.geo["t0"]
+
+    def early_stop(self, ctx):
+        return ctx.geo.get("got_at") is not None
+
+    def judge(self, ctx):
+        t = ctx.geo.get("got_at")
+        yield Criterion(f"lava bucket within {self.duration} s", t is not None,
+                        f"t={None if t is None else round(t, 1)} capped_sources={ctx.geo.get('capped')}",
+                        load_sensitive=True)
+        yield ctx.survival_criterion()
+
+
+class LavaBoxedSource(LavaFarLake):
+    """THE NEAREST LAVA CANNOT BE REACHED (2026-10-27).
+
+    The closest source sits in a sealed bedrock box, the air above it inside the box, so it passes
+    isSafeSourceLiquid (above is air, not bedrock) while no cell within bucket reach exists. An
+    open source waits 18 blocks further. A native30 run on 0.95.64 stood 14 minutes on "Getting
+    within 3 blocks" of such a source; AbstractDoToClosestObjectTask gave it up every 180 s and
+    lifted its own ban at once. Gate: a lava bucket in the pack, alive.
+    """
+    id = "lava_boxed_source"
+
+    def build(self, arena, ctx):
+        arena.flat_field(half=34, grass=False)
+        arena._fill(-34, FLOOR_Y - 3, -34, 34, FLOOR_Y - 1, 34, "stone")
+        arena._fill(3, FLOOR_Y - 1, -1, 5, STAND_Y + 2, 1, "bedrock")
+        arena._fill(4, FLOOR_Y, 0, 4, FLOOR_Y, 0, "lava")
+        arena._fill(4, STAND_Y, 0, 4, STAND_Y + 1, 0, "air")
+        arena._fill(22, FLOOR_Y, 0, 22, FLOOR_Y, 0, "lava")
+        ctx.geo["capped"] = 1
+        ctx.geo["bot_spawn"] = f"0.5 {STAND_Y} 0.5 -90 0"
+
+
 SCENARIOS = [CraftTable, CraftWoodPickaxe, CraftPickaxeMixedWood, CraftFullInventory, CraftStonePickaxe, MineStone, SmeltIron,
              CraftIronPickaxe, WanderRecovery, CraftAtDistantTable,
-             ChopTree, ChopCanopy, MineDiamond, MineCoal, GotoThenMine, EscapeLava, EscapeLavaPool,
+             ChopTree, ChopCanopy, MineDiamond, MineCoal, GotoThenMine, EscapeLava, EscapeLavaPool, EscapeLavaStep, EscapeLavaDeep, EscapeLavaDeepKit, EscapeLavaDeepFed,
              PickupDrop, PickupDropSide, PickupDropLedge, PickupDropPit,
-             PickupMinableDrop, PickupAfterGoto, PortalLavaLake]
+             PickupMinableDrop, PickupAfterGoto, PortalLavaLake, LavaFarLake, LavaBoxedSource]

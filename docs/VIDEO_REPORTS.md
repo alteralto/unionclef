@@ -60,6 +60,59 @@ python reports/build_report.py reports/stories/<version>.json --send   # when th
 Look at the contact sheet before sending: text overlapping the game HUD, a clip that shows nothing
 happening, a cut that starts after the event -- fix the storyboard and render again.
 
+## Cave Johnson films: audio and timing lessons (0.95.62)
+
+Pipeline: `reports/hf/cave-johnson-<ver>/` (copy the latest folder). Measured on 0.95.62:
+
+- **STT word times run late**, 0.1-0.6 s, worst on the first word of a take. Visual cues keyed to words
+  are fine at that error, but a line's first subtitle must start on the measured voice onset
+  (`add_subs.py: onset()`), not on the STT time.
+- **No single-pass `loudnorm` on the final mix.** It is dynamic: it lifted the music and the stamp
+  thuds in the pauses to speech level (gap peaks -3 dBFS, same as the voice). Static gain plus a
+  limiter (`volume=5dB,alimiter=limit=0.708`) keeps voice peaks at ~-3 dBFS and the pauses ~10 dB under.
+- **Check the mix with stems**, not by ear: `work/stems.py` writes pre-limiter voice / ducked music / SFX
+  and prints music under each line vs in the gaps (0.95.62: -40 vs -32 dB RMS, voice -23) and where
+  each SFX peak lands. SFX are dropped automatically if they fall inside a line.
+- **The mp4 audio stream starts at ~0.28 s.** Decoding it raw makes everything look early; measure with
+  `-af aresample=async=1:first_pts=0`.
+- **Short events can last two frames** (the crafted item sits in the output slot for 0.13 s at 15 fps).
+  Step the source frame by frame and hold the frame as a still under the ring.
+
+Added on 0.95.63:
+
+- **HUD shots go in the framed inset** (`cls="framed"`, 1600x900 at 160,40), not full frame. Full frame puts the
+  hearts row at y~1000, under the burned-in subtitles; framed, it is at y~873. Ring position = 160 + x*1.873, 40 + y*1.875.
+- **Write glyphs literally in the CSS.** `content:"\\2014"` passed through a Python string came out as an octal
+  escape plus a stray "4" on screen. Check list markers in a full-size frame.
+- **Subtitles can orphan a label word** ("...a zombie. After:"). Add the pair to `protected` in `add_subs.py`.
+- **The speed badge and the reel share the top-right corner.** Move one of them when both are on screen.
+
+Added on 0.95.64:
+
+- **A run clock on a timelapse** makes a long run readable (x293 for 30 min in 6 s). `cut()` burns it in with
+  `drawtext=textfile=...` before `setpts`; the text file holds `%{eif:trunc((t+START)/60):d:2}:%{eif:mod(trunc(t+START),60):d:2}`.
+  A textfile avoids the filter-escaping of `:`; `+START` is needed because input `-ss` resets pts to 0. Run ffmpeg
+  with `cwd` = the report folder and relative font/text paths (Windows drive colons break the filter string).
+- **A card line shown for under a second is not shown.** "now: client left the game = FAIL" appeared 0.6 s before
+  the next card; it moved onto the stat card. Check each reveal against the next cut time, not just the word time.
+- **The crash run's recording simply ends** when the client dies (457 s of a 30-min run). Step the last seconds frame by
+  frame: last gameplay frame, "Saving world", black. Put a black box behind a framed clip that runs out early.
+- **Shell vs Python paths on this host:** the Write tool's `/tmp` is not Git Bash's `/tmp`, and Windows Python does not
+  see either. Keep scratch files inside the report folder (`work/` is git-ignored).
+
+Added on 0.95.66:
+
+- **CLIPS.md times are a guide, not a cut list.** "~0:30-1:10 crafts a stone pickaxe" was the pickaxe breaking at 0:36;
+  the crafting GUI was at 1:55, the item in the slot for 0.4 s. Contact-sheet the whole clip, then frame-step the event.
+- **A small GUI needs its own crop.** The crafting table fills a sixth of an 854x480 frame; a second FOOT entry with
+  `crop=320:180:...` (x5 in the framed inset) makes the grid and the output slot readable. The still uses the same crop.
+- **STT drops a repeated word** ("point six six" came back as "point six" on every take). Check the take's energy
+  envelope instead of re-rolling it, and let `display()` write the version as digits.
+- **A verdict sits on the event, not near it.** "OUT · 43.7 S" over a sped-up clip whose last frames were still in the
+  lava was false for most of its 1.5 s; end the clip on the exit and hold a still under the verdict.
+- **Telegram goes through le_bot's proxy:** `TG_PROXY` in `C:/repos/pet/health/.env` (mineswarm's `TG_BOT_PROXY` is
+  empty; direct api.telegram.org times out). `cave-johnson-0.95.66/send_tg.py` does it and writes the receipt.
+
 ## Housekeeping
 
 `reports/footage/`, `reports/out/` and `reports/hf/videos/` are git-ignored. Delete footage once

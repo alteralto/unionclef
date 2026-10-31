@@ -59,6 +59,9 @@ DAYLOCK = "--daylock" in sys.argv
 TSET = [sys.argv[i + 1] for i, a in enumerate(sys.argv) if a == "--tset"]
 assert all("=" in kv for kv in TSET), TSET
 WEATHER = sys.argv[sys.argv.index("--weather") + 1] if "--weather" in sys.argv else None
+# --grcon "COMMAND" (repeatable): an rcon command on the playthrough server right after the restore,
+# e.g. "item replace entity {bot} armor.head with golden_helmet" for a gear A/B ({bot} = bot name).
+GRCON = [sys.argv[i + 1] for i, a in enumerate(sys.argv) if a == "--grcon"]
 if FROM_CP:
     # the reset and the fresh-start spiral below still run (their world is discarded with the
     # swap); pin the spawn so the spiral's forest search does not spend minutes on ground the
@@ -907,6 +910,8 @@ def _run():
             grcon(f"data merge entity {BOT} {{Health:20.0f,foodLevel:20,foodSaturationLevel:20.0f}}")
             time.sleep(2)
             print("  post-restore safety: forced day, cleared hostiles (r<=64), healed + fed")
+    for _cmd in GRCON:
+        print(f"  --grcon: {grcon(_cmd.replace('{bot}', BOT))}")
     if WEATHER:
         _kind, _, _ticks = WEATHER.partition(":")
         print(f"  weather forced: {grcon(f'weather {_kind} {_ticks or 6000}')}")
@@ -1257,6 +1262,10 @@ def _run():
     # Mark the TIME instead; docker logs --since is not affected by how much the server says.
     phase("watch"); print(f"[4] watching {MINUTES} min for progress...")
     t0=time.time(); best_items=inv0.get("items",0); moved=set(); last_pos=None; responsive=0; busy_cnt=0
+    # A CLIENT THAT LEFT THE GAME IS NOT A RUN (2026-10-26): the client crashed at t=448 s of a
+    # 30-minute run (NPE in InventorySubTracker), sat offline for 25 minutes, and the verdict still
+    # read PASS on the rung it had reached before the crash. Count consecutive offline polls.
+    offline_run=0; offline_max=0
     fps_samples = []
     _cp_last = time.time(); _cp_prefix = time.strftime("cp%m%d-%H%M"); _cp_series = []
     _lava_last = [None]
@@ -1529,6 +1538,10 @@ def _run():
             # a bot that had run out of food and kept fighting; the log could not show it.
             _me = gs.get('self') or {}
             _fd = ",".join(f"{k}:{v}" for k, v in (inv.get('food') or {}).items()) or "-"
+            if gs.get('inGame') is False:
+                offline_run += 1; offline_max = max(offline_max, offline_run)
+            else:
+                offline_run = 0
             print(f"  t={int(time.time()-t0)}s inGame={gs.get('inGame')} hp={hp} food={_me.get('food')}/{_me.get('saturation')} eat={_fd} pos={pos} items={inv.get('items')} busy={ht.get('busy')}{dl}")
         except Exception as e:
             print(f"  poll error (client may be busy): {str(e)[:80]}")
@@ -1633,7 +1646,10 @@ def _run():
     # Keep both server-log causes and the existing independent death watch;
     # progress after a survival failure cannot satisfy this run's verdict.
     died = bool(deaths) or _lava_died[0]
-    ok = not died and responsive>=3 and busy_cnt>=2 and (satisfied if want else bool(reached))
+    left_game = offline_max >= 3
+    ok = not died and not left_game and responsive>=3 and busy_cnt>=2 and (satisfied if want else bool(reached))
+    if left_game:
+        print(f"  client left the game: {offline_max} consecutive offline polls; the run cannot PASS")
     if died:
         print("  survival failed: the run died; ladder progress cannot count as PASS")
     if want:

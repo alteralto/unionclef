@@ -110,6 +110,17 @@ public class BeatMinecraftTask extends Task {
     private final List<PriorityTask> gatherResources = new LinkedList<>();
     /** Food fetched from inside the Nether (see the NETHER branch). */
     private Task netherFoodTask;
+    /** Gold helmet fetched before the nether trip, on a budget; see "Getting a gold helmet". */
+    private static final int GOLD_BUDGET_S = 360;
+    private Task goldHelmetTask;
+    private long goldSinceMs;
+    private boolean goldGivenUp;
+    public static volatile int goldHelmetGivenUp;
+
+    private static boolean hasAnyGoldArmor(AltoClef mod) {
+        return mod.getItemStorage().hasItem(Items.GOLDEN_HELMET, Items.GOLDEN_CHESTPLATE,
+                Items.GOLDEN_LEGGINGS, Items.GOLDEN_BOOTS);
+    }
     /** The night's shelter when there is no bed (see the sleep branch). */
     private adris.altoclef.tasks.movement.NightShelterTask nightShelterTask;
     /** Time spent on the bed hunt today (see the bed priority task); capped per day. */
@@ -889,7 +900,15 @@ public class BeatMinecraftTask extends Task {
                         }
                     }
 
-                    return StorageHelper.miningRequirementMet(MiningRequirement.WOOD) && !mod.getItemStorage().hasItem(Items.STONE_PICKAXE) && !hasSafeIronPick && !mod.getItemStorage().hasItem(Items.DIAMOND_PICKAXE);
+                    // ⛔ COBBLESTONE IN HAND NEEDS NO PICKAXE TO BECOME ONE (2026-10-27). The wood gate is
+                    // there to MINE the cobblestone; with three already carried it only blocks the
+                    // craft. Measured from repro-lava-stuck-cell: the iron pickaxe wore out 30 s in,
+                    // underground, with 64 cobblestone in the inventory, and the bot spent the next
+                    // five minutes on "Collecting resource: wooden_pickaxe" (priority 400) because
+                    // this, at 410, read -inf until a wooden one existed.
+                    boolean canGetStone = StorageHelper.miningRequirementMet(MiningRequirement.WOOD)
+                            || mod.getItemStorage().getItemCount(Items.COBBLESTONE) >= 3;
+                    return canGetStone && !mod.getItemStorage().hasItem(Items.STONE_PICKAXE) && !hasSafeIronPick && !mod.getItemStorage().hasItem(Items.DIAMOND_PICKAXE);
                 }));
 
         gatherResources.add(new CraftItemPriorityTask(420, getRecipeTarget(Items.IRON_PICKAXE),
@@ -2577,6 +2596,25 @@ public class BeatMinecraftTask extends Task {
                 }
                 if (!itemStorage.hasItem(Items.DIAMOND_PICKAXE, Items.IRON_PICKAXE, Items.STONE_PICKAXE, Items.WOODEN_PICKAXE)) {
                     return TaskCatalogue.getItemTask(Items.WOODEN_PICKAXE, 1);
+                }
+
+                // ⛔ PIGLINS ATTACK A PLAYER WITH NO GOLD ON (2026-10-22). Measured from nether-fresh:
+                // "slain by Piglin", and a piglin fight that ended "fell from a high place", in runs
+                // that otherwise survived; the gold helmet was only ever made from gold that happened
+                // to be in the pack. Fetch one before the trip -- mined, smelted, crafted -- but on a
+                // budget: the food gate taught that an unbounded "first collect X" stalls where X is
+                // scarce, so after GOLD_BUDGET_S the trip goes ahead without it.
+                if (!goToNetherTask.isActive() && !hasAnyGoldArmor(mod) && !goldGivenUp
+                        && itemStorage.hasItem(Items.IRON_PICKAXE, Items.DIAMOND_PICKAXE)) {
+                    if (goldSinceMs == 0) goldSinceMs = System.currentTimeMillis();
+                    if (System.currentTimeMillis() - goldSinceMs < GOLD_BUDGET_S * 1000L) {
+                        if (goldHelmetTask == null) goldHelmetTask = TaskCatalogue.getItemTask(Items.GOLDEN_HELMET, 1);
+                        setDebugState("Getting a gold helmet for the piglins");
+                        return goldHelmetTask;
+                    }
+                    goldGivenUp = true;
+                    goldHelmetGivenUp++;
+                    Debug.logMessage("No gold helmet within " + GOLD_BUDGET_S + " s; going to the nether without it");
                 }
 
                 // DO NOT INTERRUPT GOING TO NETHER

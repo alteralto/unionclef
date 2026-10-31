@@ -5204,9 +5204,16 @@ public class TungstenConfig {
 
     /** Use swimming ascent input while PillarTask's body touches water, then resume
      * land sneak/jump input for actual placement. False retains the old input for
-     * same-client A/B tests. Experimental until wet construction, dry placement
-     * and the retained natural food-bank checkpoint have been validated. */
-    public boolean pillarUsesSwimInputInWater = false;
+     * same-client A/B tests. Wet construction and dry placement are validated;
+     * the retained native checkpoint shows new food in all five FPS-valid ON
+     * observations, while ordinary input succeeds once. This is ascent input,
+     * not a claim that food140 or survival is solved. */
+    public boolean pillarUsesSwimInputInWater = true;
+
+    /** BlockPathWalker holds jump while its feet are in a liquid and the next waypoint is above
+     * them (baritone Movement.java:125-127). Without it a bot floating in lava, never on the
+     * ground, walked into a one-block shore with no jump and burned. False = old input, for A/B. */
+    public boolean walkerJumpsInLiquid = true;
 
     /** Hand a slime pad to {@link kaptainwutax.tungsten.task.SlimeBounceTask} — one manoeuvre
      *  that holds heading and sprint across the whole bounce chain, instead of the walker
