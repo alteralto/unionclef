@@ -249,6 +249,10 @@ public class McpServer {
                 schema("x:int", "y:int", "z:int"),
                 a -> api.flyTo(argInt(a, "x"), argInt(a, "y"), argInt(a, "z"),
                         a.has("low") && a.get("low").getAsBoolean(), a.has("tricks") ? a.get("tricks").getAsInt() : 0));
+        tool("flyRings",
+                "Elytra through rings: centres \"x,y,z;x,y,z;...\" in order, each crossed square to the way in; "
+                + "lands 60 blocks past the last. flyStatus: waypoint k/n, ringMiss (blocks off centre per ring).",
+                schema("points:string"), a -> api.flyRings(a.get("points").getAsString()));
         tool("flyRoute",
                 "Elytra route: points \"x,z;x,z;...\" flown through without landing, landing at the last one "
                 + "(a tour of places, a patrol round home). Optional low, tricks as in flyTo. Poll flyStatus "
