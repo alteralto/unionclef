@@ -133,6 +133,7 @@ public class AltoClef implements ModInitializer {
     // Py4j bridge
     private Py4jEntryPoint _py4jEntryPoint = null;
     private GatewayServer _gatewayServer = null;
+    private int _gatewayBasePort = -1; // the port asked for in the settings (a taken one moves up)
     // MCP server (LAN-hosted control surface over the same levers)
     private adris.altoclef.mcp.McpServer _mcpServer = null;
 
@@ -165,7 +166,9 @@ public class AltoClef implements ModInitializer {
 
     public void initializePythonSender() {
         if (_gatewayServer != null) {
-            // Already running — restart cleanly to pick up new port settings
+            // Every settings load lands here (each @set). A restart under a connected Python side
+            // left the port closed for good (31.10, voice went deaf): restart for a new port only.
+            if (getModSettings().getPythonGatewayPort() == _gatewayBasePort) return;
             reloadPythonSender();
             return;
         }
@@ -189,6 +192,7 @@ public class AltoClef implements ModInitializer {
                 if (port != originalPort) {
                     Debug.logMessage("Py4j port conflict — bound to " + port + " for this run");
                 }
+                _gatewayBasePort = originalPort;
                 _py4jEntryPoint.InitPythonCallback();
                 Debug.logMessage("Py4j gateway started on port " + port);
                 startMcpServer();

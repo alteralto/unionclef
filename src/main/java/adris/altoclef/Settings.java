@@ -626,6 +626,16 @@ public class Settings implements IFailableConfigFile {
     }
 
     /**
+     * Voice for a local agent as UDP datagrams to 127.0.0.1:voiceUdpPort, beside the py4j
+     * callback (util/agent/VoiceUdp). 0 turns it off.
+     */
+    private int voiceUdpPort = 25360;
+
+    public int getVoiceUdpPort() {
+        return voiceUdpPort;
+    }
+
+    /**
      * MCP server (Model Context Protocol over Streamable HTTP) hosted directly
      * by the mod, bound to 0.0.0.0 so a cognitive agent (Claude) can drive the
      * bot over the LAN — http://&lt;lan-ip&gt;:mcpPort/mcp. Wraps the same
