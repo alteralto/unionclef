@@ -39,6 +39,16 @@ public final class ElytraFlight {
     private static int ticks, takeoffTicks, boostCooldown, rocketsUsed;
     private static int glideWait;
     private static volatile int lastRocketTick = -1000;
+    private static volatile kaptainwutax.tungsten.elytra.ElytraSolver.Plan plan; // the solver's last
+    private static int planTick = -100;
+    private static boolean solverSteered; // the solver had the controls last tick
+    // Rings: route points are ring centres, flown through in order by the solver; a ring counts
+    // when the flight crosses its plane (square to the way in), the miss is how far off centre.
+    private static volatile boolean rings;
+    private static final java.util.List<Double> ringMiss = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private static double lastX, lastY, lastZ;
+    private static double[] ringStart = new double[3]; // where the gliding began: the way into ring 1
+    private static net.minecraft.util.math.Vec3d throughNext; // the ring centre the next plan must pass
     private static final ElytraPilot pilot = new ElytraPilot();
     private static boolean pilotReady;
     private static volatile ElytraPilot.Out lastOut;
@@ -183,22 +193,96 @@ public final class ElytraFlight {
         bestTick = 0;
         lastOut = null;
         lastRocketTick = -1000;
+        plan = null;
+        solverSteered = false;
+        rings = false;
         reason = "";
         phase = Phase.EQUIP;
         FlightViz.newFlight();
         return status();
     }
 
+    /** Fly through rings: points are ring centres {x, y, z}, in order; after the last one it lands
+     *  60 blocks on. Steered by the solver whatever the elytraSolver setting. Call on the client thread. */
+    public static synchronized Map<String, Object> startRings(double[][] centres) {
+        if (centres.length == 0) {
+            Map<String, Object> m = status();
+            m.put("phase", "failed");
+            m.put("reason", "no rings");
+            return m;
+        }
+        Map<String, Object> m = begin(centres[0][0], centres[0][1], centres[0][2], false, 0);
+        route = centres;
+        routeIdx = 0;
+        rings = true;
+        ringMiss.clear();
+        return status();
+    }
+
+    /** One tick through the rings: aim a little past the centre along the way in, count crossings. */
+    private static void flyRings(MinecraftClient client, ClientPlayerEntity p) {
+        double[][] r = route;
+        double[] c = r[routeIdx];
+        double[] from = routeIdx > 0 ? r[routeIdx - 1] : ringStart;
+        double nx = c[0] - from[0], ny = c[1] - from[1], nz = c[2] - from[2];
+        double nl = Math.max(Math.sqrt(nx * nx + ny * ny + nz * nz), 1e-6);
+        nx /= nl;
+        ny /= nl;
+        nz /= nl;
+        double ox = lastX, oy = lastY, oz = lastZ, px = p.getX(), py = p.getY() + 0.3, pz = p.getZ();
+        double before = (ox - c[0]) * nx + (oy - c[1]) * ny + (oz - c[2]) * nz;
+        double now = (px - c[0]) * nx + (py - c[1]) * ny + (pz - c[2]) * nz;
+        lastX = px;
+        lastY = py;
+        lastZ = pz;
+        if (before < 0 && now >= 0) { // through the plane: where, against the centre
+            double t = before / (before - now);
+            double qx = ox + (px - ox) * t - c[0], qy = oy + (py - oy) * t - c[1], qz = oz + (pz - oz) * t - c[2];
+            // off centre as a square frame sees it: the larger of up/down and sideways
+            double hl = Math.max(Math.hypot(nx, nz), 1e-6);
+            double side = Math.abs(qx * -nz / hl + qz * nx / hl);
+            ringMiss.add(Math.round(Math.max(Math.abs(qy), side) * 10) / 10.0);
+            if (++routeIdx >= r.length) { // the last ring: land 60 blocks on along the way out
+                rings = false;
+                route = null;
+                tx = c[0] + nx / Math.max(Math.hypot(nx, nz), 1e-6) * 60;
+                tz = c[2] + nz / Math.max(Math.hypot(nx, nz), 1e-6) * 60;
+                ty = c[1];
+                pilot.resetForLanding(p.getYaw(), p.getPitch());
+                solverSteered = false;
+                return;
+            }
+            c = r[routeIdx];
+        }
+        tx = c[0];
+        ty = c[1];
+        tz = c[2];
+        ElytraPilot.Out o = new ElytraPilot.Out();
+        o.mode = ElytraPilot.Mode.TRICK;
+        o.yaw = p.getYaw();
+        o.pitch = p.getPitch();
+        // On towards the ring after this one (or straight on past the last), passing this one's centre.
+        double[] nxt = routeIdx + 1 < r.length ? r[routeIdx + 1] : new double[]{c[0] + nx * 40, c[1], c[2] + nz * 40};
+        throughNext = new net.minecraft.util.math.Vec3d(c[0], c[1], c[2]);
+        steerTo(client, p, o, new net.minecraft.util.math.Vec3d(nxt[0], nxt[1], nxt[2]), 0.3, 0.6);
+        throughNext = null;
+        lastOut = o;
+        p.setYaw(o.yaw);
+        p.setPitch(o.pitch);
+        if (o.boost && !boost(client, p)) pilot.boostFailed();
+    }
+
     /** What the flight drawing needs, read on the client thread (FlightViz). */
     record View(boolean on, double tx, double ty, double tz, double[][] route, int routeIdx, String leader,
-                ElytraPilot.Mode mode, int ticksSinceRocket) {
+                ElytraPilot.Mode mode, int ticksSinceRocket, kaptainwutax.tungsten.elytra.ElytraSolver.Plan plan) {
     }
 
     static View view() {
         Phase ph = phase;
         ElytraPilot.Out o = lastOut;
         boolean on = ph == Phase.EQUIP || ph == Phase.TAKEOFF || ph == Phase.FLYING;
-        return new View(on, tx, ty, tz, route, routeIdx, leader, o == null ? null : o.mode, ticks - lastRocketTick);
+        var pl = solverSteered ? plan : null;
+        return new View(on, tx, ty, tz, route, routeIdx, leader, o == null ? null : o.mode, ticks - lastRocketTick, pl);
     }
 
     public static void stop() {
@@ -218,6 +302,7 @@ public final class ElytraFlight {
         if (lowLevel) m.put("low", true);
         var r = route;
         if (r != null) m.put("waypoint", (routeIdx + 1) + "/" + r.length);
+        if (rings || !ringMiss.isEmpty()) m.put("ringMiss", new java.util.ArrayList<>(ringMiss));
         var tr = pilot.trick();
         if (tr != null) m.put("trick", tr.name().toLowerCase(java.util.Locale.ROOT));
         m.put("figures", pilot.tricksDone());
@@ -474,6 +559,14 @@ public final class ElytraFlight {
             pilot.reset(p.getYaw(), p.getPitch());
             pilot.setTricks(rescue ? 0 : tricksWanted);
             pilotReady = true;
+            lastX = p.getX();
+            lastY = p.getY() + 0.3;
+            lastZ = p.getZ();
+            ringStart = new double[]{lastX, lastY, lastZ};
+        }
+        if (rings && !rescue && route != null) {
+            flyRings(client, p);
+            return;
         }
         // A route: a waypoint passed within 20 blocks -- on to the next one, no landing.
         var r = route;
@@ -496,6 +589,17 @@ public final class ElytraFlight {
         ElytraPilot.Out o = pilot.step(p.getX(), p.getY(), p.getZ(), v.x, v.y, v.z,
                 tx, landingY(client), tz, terrainAhead(client, p), top(client, p.getX(), p.getZ()),
                 runwayClear(client, p), obstacleAhead(client, p));
+        // En route only: from the pilot's descent on, the approach is its own (handed over at cruise
+        // height it lands; handed over low and fast over the spot it circled a block over the
+        // ground for half a minute, a rocket a second).
+        boolean enRoute = o.mode == ElytraPilot.Mode.CRUISE || o.mode == ElytraPilot.Mode.CLIMB
+                || o.mode == ElytraPilot.Mode.AVOID;
+        if (solverOn() && !rescue && enRoute && dist > 70) {
+            steer(client, p, o, goalAhead(client, p, dist));
+        } else if (solverSteered) {
+            solverSteered = false;
+            pilot.resetForLanding(p.getYaw(), p.getPitch()); // the pilot's integrator saw none of it
+        }
         lastOut = o;
         p.setYaw(o.yaw);
         p.setPitch(o.pitch);
@@ -686,6 +790,15 @@ public final class ElytraFlight {
         }
         ElytraPilot.Out o = pilot.stepFollow(p.getX(), p.getY(), p.getZ(), v.x, v.y, v.z, lx, ly, lz, lvx, lvy, lvz,
                 terrainAhead(client, p), top(client, p.getX(), p.getZ()), obstacleAhead(client, p));
+        double gapNow = Math.hypot(Math.hypot(lx - p.getX(), lz - p.getZ()), ly - p.getY());
+        if (solverOn() && gapNow > 14) {
+            // Where the leader will be in a second, a few blocks behind them on their track.
+            double sp = Math.max(Math.hypot(Math.hypot(lvx, lvz), lvy), 1e-6);
+            steer(client, p, o, new net.minecraft.util.math.Vec3d(lx + lvx * 20 - lvx / sp * 6,
+                    ly + lvy * 20 - lvy / sp * 6, lz + lvz * 20 - lvz / sp * 6));
+        } else if (solverSteered) {
+            solverSteered = false;
+        }
         lastOut = o;
         p.setYaw(o.yaw);
         p.setPitch(o.pitch);
@@ -842,6 +955,65 @@ public final class ElytraFlight {
     }
 
     /** Fire a rocket; false when it could not be used this tick (the pilot asks again). */
+    private static boolean solverOn() {
+        var mod = adris.altoclef.AltoClef.getInstance();
+        return mod != null && mod.getModSettings().isElytraSolver();
+    }
+
+    /** A rocket's price for the solver, in blocks of progress (see Settings.elytraRocketCost). */
+    private static double rocketCost(ClientPlayerEntity p) {
+        var mod = adris.altoclef.AltoClef.getInstance();
+        double set = mod == null ? -1 : mod.getModSettings().getElytraRocketCost();
+        if (set >= 0) return set;
+        return p.getAbilities().creativeMode ? 12 : 40;
+    }
+
+    /** En route: a point up to 60 blocks ahead on the way to the target, at the pilot's cruise height
+     *  over the highest ground of the corridor (4 blocks over it flying low), so it takes over the
+     *  approach from where it would have been itself. */
+    private static net.minecraft.util.math.Vec3d goalAhead(MinecraftClient client, ClientPlayerEntity p, double dist) {
+        double dx = tx - p.getX(), dz = tz - p.getZ(), k = Math.min(60, dist) / Math.max(dist, 1e-6);
+        double y = terrainAhead(client, p) + (lowLevel ? 4 : ElytraPilot.CLEARANCE);
+        return new net.minecraft.util.math.Vec3d(p.getX() + dx * k, y, p.getZ() + dz * k);
+    }
+
+    /** The solver flies this tick: a fresh plan every other tick, the look turned towards it at a
+     *  hand's pace, a rocket only when the plan just asked for one. */
+    private static void steer(MinecraftClient client, ClientPlayerEntity p, ElytraPilot.Out o,
+                              net.minecraft.util.math.Vec3d goal) {
+        steerTo(client, p, o, goal, 0.4, 1.5);
+    }
+
+    private static void steerTo(MinecraftClient client, ClientPlayerEntity p, ElytraPilot.Out o,
+                                net.minecraft.util.math.Vec3d goal, double heightWeight, double clearance) {
+        boolean fresh = false;
+        if (plan == null || ticks - planTick >= 2) {
+            var g = new kaptainwutax.tungsten.elytra.ElytraSolver.Goal();
+            g.point = goal;
+            g.rocketCost = rocketCost(p);
+            g.heightWeight = heightWeight;
+            g.clearance = clearance;
+            g.through = throughNext;
+            int since = ticks - lastRocketTick;
+            g.mayFire = findItem(p, Items.FIREWORK_ROCKET) >= 0
+                    && since >= kaptainwutax.tungsten.elytra.ElytraPhysics.ROCKET_MIN_TICKS;
+            int left = Math.max(0, kaptainwutax.tungsten.elytra.ElytraPhysics.ROCKET_MIN_TICKS - since);
+            var pl = kaptainwutax.tungsten.elytra.ElytraSolver.solve(client.world,
+                    new net.minecraft.util.math.Vec3d(p.getX(), p.getY(), p.getZ()), p.getVelocity(), left, g);
+            if (pl != null) {
+                plan = pl;
+                planTick = ticks;
+                fresh = true;
+            }
+        }
+        if (plan == null) return;
+        solverSteered = true;
+        o.yaw = p.getYaw() + Math.max(-25, Math.min(25,
+                net.minecraft.util.math.MathHelper.wrapDegrees(plan.yaw() - p.getYaw())));
+        o.pitch = p.getPitch() + Math.max(-15, Math.min(15, plan.pitch() - p.getPitch()));
+        o.boost = fresh && plan.fire();
+    }
+
     private static boolean boost(MinecraftClient client, ClientPlayerEntity p) {
         // A rocket used on the ground just flies off on its own: only while gliding.
         if (boostCooldown > 0 || !adris.altoclef.multiversion.entity.LivingEntityVer.isGliding(p)) return false;

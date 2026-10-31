@@ -641,6 +641,27 @@ public class Settings implements IFailableConfigFile {
      */
     private String recordFfmpeg = "";
 
+    /**
+     * Elytra en route and in pursuit steered by tungsten's trajectory solver (ElytraSolver: candidate
+     * looks flown ahead through the physics model) instead of the PI pilot. Take-off and landing
+     * stay with the pilot. Off: the pilot flies everything, as before.
+     */
+    private boolean elytraSolver = false;
+
+    /**
+     * What one rocket costs the solver, in blocks of progress. Below 0: 12 in creative, 40 in
+     * survival, where every rocket is paper and gunpowder.
+     */
+    private double elytraRocketCost = -1;
+
+    public boolean isElytraSolver() {
+        return elytraSolver;
+    }
+
+    public double getElytraRocketCost() {
+        return elytraRocketCost;
+    }
+
     public String getRecordFfmpeg() {
         return recordFfmpeg;
     }

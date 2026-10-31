@@ -68,27 +68,31 @@ public final class FrameRecorder {
         return result(true, "");
     }
 
-    /** Stop and finish the file; waits for ffmpeg up to a minute. */
-    public static synchronized Map<String, Object> stop() {
-        if (!on) return result(false, "not recording");
-        on = false;
-        if (writer != null) {
-            queue.offer(END);
-            try {
-                writer.join(60_000);
-            } catch (InterruptedException ignored) {
-                Thread.currentThread().interrupt();
-            }
+    /** Stop and finish the file; waits for ffmpeg up to a minute. The wait holds no lock: frames
+     *  arrive on the render thread under this class's lock, and a stop that waited while holding it
+     *  froze the game until ffmpeg was done (01.11, every MCP call after it timed out). */
+    public static Map<String, Object> stop() {
+        Thread w;
+        Process pr;
+        BlockingQueue<byte[]> q;
+        synchronized (FrameRecorder.class) {
+            if (!on) return result(false, "not recording");
+            on = false;
+            w = writer;
+            pr = proc;
+            q = queue;
+            writer = null;
+            proc = null;
         }
-        if (proc != null) {
-            try {
-                proc.waitFor(60, java.util.concurrent.TimeUnit.SECONDS);
-            } catch (InterruptedException ignored) {
-                Thread.currentThread().interrupt();
+        try {
+            if (w != null) {
+                q.put(END);
+                w.join(60_000);
             }
+            if (pr != null) pr.waitFor(60, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
         }
-        writer = null;
-        proc = null;
         return result(true, "");
     }
 

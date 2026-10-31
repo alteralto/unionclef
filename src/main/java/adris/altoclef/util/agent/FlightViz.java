@@ -28,7 +28,7 @@ import java.util.List;
  */
 public final class FlightViz {
 
-    private static final int TRAIL_MAX = 240, ROCKETS_MAX = 64, KEEP_TICKS = 600, PREDICT_TICKS = 40;
+    private static final int TRAIL_MAX = 200, ROCKETS_MAX = 64, KEEP_TICKS = 600, PREDICT_TICKS = 40;
 
     private record Pt(Vec3d at, Color color) {
     }
@@ -39,7 +39,7 @@ public final class FlightViz {
 
     private static final Color TARGET = new Color(60, 230, 90), ROUTE = new Color(60, 210, 230),
             PREDICT = new Color(250, 220, 60), BOOSTED = new Color(255, 140, 30), HIT = new Color(255, 50, 50),
-            LEADER = new Color(230, 70, 230), HOVER = new Color(120, 170, 255);
+            LEADER = new Color(230, 70, 230), HOVER = new Color(120, 170, 255), OTHER = new Color(150, 150, 150);
 
     private FlightViz() {
     }
@@ -122,6 +122,14 @@ public final class FlightViz {
                     out.add(new Line(pts[i - 1].add(0, 0.3, 0), pts[i].add(0, 0.3, 0), i <= pull ? BOOSTED : PREDICT));
                 }
                 if (path.hit()) out.add(box(pts[pts.length - 1].add(0, 0.3, 0), 0.8, HIT));
+                var plan = f.plan();
+                if (plan != null) { // the solver's runners-up, grey: what it weighed against
+                    for (Vec3d[] alt : plan.others()) {
+                        for (int i = 2; i < alt.length; i += 2) {
+                            out.add(new Line(alt[i - 2].add(0, 0.3, 0), alt[i].add(0, 0.3, 0), OTHER));
+                        }
+                    }
+                }
             }
         }
         String lead = f.on() && f.leader() != null ? f.leader() : hover ? CreativeWingman.leaderName() : null;

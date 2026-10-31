@@ -5870,6 +5870,23 @@ public class Py4jEntryPoint {
                 Map.of("phase", "failed", "reason", "client thread timeout"));
     }
 
+    /** Fly through rings: centres "x,y,z;x,y,z;..." in order (ElytraFlight.startRings). */
+    public Map<String, Object> flyRings(String points) {
+        java.util.List<double[]> pts = new java.util.ArrayList<>();
+        for (String part : points.split(";")) {
+            String[] v = part.trim().split(",");
+            if (v.length < 3) continue;
+            try {
+                pts.add(new double[] {Double.parseDouble(v[0].trim()), Double.parseDouble(v[1].trim()),
+                        Double.parseDouble(v[2].trim())});
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        double[][] arr = pts.toArray(new double[0][]);
+        return onClientThread(() -> adris.altoclef.util.agent.ElytraFlight.startRings(arr),
+                Map.of("phase", "failed", "reason", "client thread timeout"));
+    }
+
     public Map<String, Object> flyStatus() {
         return adris.altoclef.util.agent.ElytraFlight.status();
     }
