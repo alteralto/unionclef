@@ -636,6 +636,16 @@ public class Settings implements IFailableConfigFile {
     }
 
     /**
+     * ffmpeg.exe for recordStart (util/agent/FrameRecorder): game-only video, encoded outside the
+     * game. Empty: recording off. Set here only, never by a command: the MCP server is on the LAN.
+     */
+    private String recordFfmpeg = "";
+
+    public String getRecordFfmpeg() {
+        return recordFfmpeg;
+    }
+
+    /**
      * MCP server (Model Context Protocol over Streamable HTTP) hosted directly
      * by the mod, bound to 0.0.0.0 so a cognitive agent (Claude) can drive the
      * bot over the LAN — http://&lt;lan-ip&gt;:mcpPort/mcp. Wraps the same

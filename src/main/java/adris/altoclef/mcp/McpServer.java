@@ -270,6 +270,14 @@ public class McpServer {
                 a -> api.hoverStatus());
         tool("flyStatus", "Current elytra flight: phase, reason, distance, rockets used.", schema(),
                 a -> api.flyStatus());
+        tool("recordStart", "Record the game window to <game dir>/recordings/<name>.mp4 (encoded by the ffmpeg "
+                        + "set in recordFfmpeg, outside the game). Optional fps (int) up to 20, default 20.",
+                schema("name:string"),
+                a -> api.recordStart(argStr(a, "name"), a.has("fps") ? a.get("fps").getAsInt() : 20));
+        tool("flightLog", "The last n ticks of elytra gliding: tick, x, y, z, vx, vy, vz, yaw, pitch, rocket "
+                        + "pulling (0/1), collided (0/1). Optional n (int), default 1200.",
+                schema(), a -> api.flightLog(a.has("n") ? a.get("n").getAsInt() : 1200));
+        tool("recordStop", "Stop recording and finish the video file.", schema(), a -> api.recordStop());
         tool("flyStop", "Abort the elytra flight (the bot glides down on its own).", schema(),
                 a -> api.flyStop());
         tool("flyFollow",

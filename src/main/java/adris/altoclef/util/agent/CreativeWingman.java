@@ -28,6 +28,7 @@ public final class CreativeWingman {
     private static volatile String leader;
     private static int lostTicks, groundTicks, ticks;
     private static volatile double gap;
+    private static volatile Vec3d slotSeen; // where it held station beside the leader (FlightViz)
     private static Vec3d lastLead; // the leader's position a tick ago: their motion
     private static volatile double[] point; // hoverTo: the block x, z to land on; null following
     private static double bestDist, bestY;  // progress to the point, for the watchdog
@@ -51,7 +52,9 @@ public final class CreativeWingman {
         if (find(c, nick) == null) return fail("not in sight");
         leader = nick;
         point = null;
+        slotSeen = null;
         phase = Phase.FLYING;
+        FlightViz.newFlight();
         reason = "";
         lostTicks = groundTicks = ticks = 0;
         lastLead = null;
@@ -67,6 +70,7 @@ public final class CreativeWingman {
         leader = null;
         point = new double[] {x + 0.5, z + 0.5};
         phase = Phase.FLYING;
+        FlightViz.newFlight();
         reason = "";
         ticks = bestTick = 0;
         bestDist = Double.MAX_VALUE;
@@ -83,6 +87,12 @@ public final class CreativeWingman {
     }
 
     public static boolean active() { return phase == Phase.FLYING || phase == Phase.LANDING; }
+
+    static String leaderName() { return leader; }
+
+    static double[] pointTo() { return point; }
+
+    static Vec3d slot() { return leader == null ? null : slotSeen; }
 
     public static Map<String, Object> status() {
         Map<String, Object> m = new HashMap<>();
@@ -176,6 +186,7 @@ public final class CreativeWingman {
             double fx = -Math.sin(yaw), fz = Math.cos(yaw); // the way the leader faces
             double rx = -fz, rz = fx;                          // their right
             Vec3d slot = new Vec3d(lead.getX() + rx * SIDE - fx * BACK, lead.getY() + UP, lead.getZ() + rz * SIDE - fz * BACK);
+            slotSeen = slot;
             Vec3d d = slot.subtract(p.getX(), p.getY(), p.getZ());
             gap = d.length();
             // Leader's own motion plus a pull towards the slot, gentle near it so it settles.
