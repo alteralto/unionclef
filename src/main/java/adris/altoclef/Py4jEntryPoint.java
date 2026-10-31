@@ -5886,6 +5886,16 @@ public class Py4jEntryPoint {
                 Map.of("phase", "failed", "reason", "client thread timeout"));
     }
 
+    /** Camera for recordings: perspective 0 first person, 1 behind, 2 in front; hud false hides the
+     *  HUD (F1). */
+    public Map<String, Object> camera(int perspective, boolean hud) {
+        return onClientThread(() -> {
+            setPerspective(perspective);
+            MinecraftClient.getInstance().options.hudHidden = !hud;
+            return Map.<String, Object>of("ok", true, "perspective", perspective, "hud", hud);
+        }, Map.<String, Object>of("ok", false));
+    }
+
     /** Fly through rings: centres "x,y,z;x,y,z;..." in order (ElytraFlight.startRings). */
     public Map<String, Object> flyRings(String points) {
         java.util.List<double[]> pts = new java.util.ArrayList<>();
