@@ -120,6 +120,18 @@ public final class CreativeWingman {
         return c.world.getTopY(Heightmap.Type.MOTION_BLOCKING, (int) Math.floor(x), (int) Math.floor(z));
     }
 
+    /** A block with collision over the head, up to the column's top. The heightmap counts water as
+     *  ground: from the bottom of a lake the surface read as a roof and the flight ended "blocked"
+     *  in four seconds (31.10). */
+    private static boolean solidOver(MinecraftClient c, double x, double y, double z) {
+        int top = (int) ground(c, x, z);
+        var pos = new net.minecraft.util.math.BlockPos.Mutable((int) Math.floor(x), (int) Math.floor(y) + 2, (int) Math.floor(z));
+        for (; pos.getY() < top; pos.move(0, 1, 0)) {
+            if (!c.world.getBlockState(pos).getCollisionShape(c.world, pos).isEmpty()) return true;
+        }
+        return false;
+    }
+
     /** True while a player is up in the air in creative: off the ground, not in water, not gliding. */
     public static boolean hovering(MinecraftClient c, PlayerEntity pl) {
         return !pl.isOnGround() && !pl.isTouchingWater()
@@ -208,7 +220,7 @@ public final class CreativeWingman {
         double ux = dx / hd, uz = dz / hd;
         // Something over the head (a platform, a roof, letters hung under one): straight up only
         // bumps into it -- out sideways at this height first, towards the point, till the sky opens.
-        boolean roofed = ground(c, px, pz) > py + 2;
+        boolean roofed = ground(c, px, pz) > py + 2 && solidOver(c, px, py, pz);
         double cruise = ground(c, px, pz);
         for (int i = 1; i <= LOOK_AHEAD; i++) {
             double s = Math.min(i, hd);

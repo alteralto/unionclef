@@ -103,9 +103,20 @@ public final class SwimToShore {
         return false;
     }
 
+    /** Y of the first block above the water the player is in (the water's top + 1). */
+    private static int surface(MinecraftClient client, ClientPlayerEntity p) {
+        BlockPos.Mutable at = p.getBlockPos().mutableCopy();
+        int limit = at.getY() + 64;
+        while (at.getY() < limit && !client.world.getFluidState(at).isEmpty()) at.move(0, 1, 0);
+        return at.getY();
+    }
+
     /** Nearest column whose top block is dry ground, in rings outward; null when all water. */
     private static BlockPos nearestShore(MinecraftClient client, ClientPlayerEntity p, int radius) {
         int px = p.getBlockX(), pz = p.getBlockZ();
+        // Bank heights against where the swimmer will float, not its feet: from the bottom of a
+        // deep lake every bank was "too high" and the bot said "no shore in range" (31.10).
+        double swimY = surface(client, p) - 0.5;
         BlockPos best = null;
         double bestD = Double.MAX_VALUE;
         for (int r = 1; r <= radius && best == null; r++) {
@@ -118,9 +129,10 @@ public final class SwimToShore {
                     BlockPos ground = new BlockPos(x, top - 1, z);
                     var st = client.world.getBlockState(ground);
                     if (!st.getFluidState().isEmpty() || st.isAir()) continue;
-                    // A bank more than a block above the water cannot be climbed by swimming (the
-                    // swimmer floats about half a block under the surface: one block up is +1.6).
-                    if (top - p.getY() > 1.7) continue;
+                    // Only a bank about level with the water can be climbed out on: the swimmer
+                    // never gets its feet over the water's top, and a ledge a block higher had it
+                    // jumping at the wall for 45 s (test tank, 01.11). Level is +0.5 here.
+                    if (top - swimY > 1.1) continue;
                     if (triedNear(x, z)) continue; // a bank it already swam into and could not climb
                     double d = dx * dx + dz * dz;
                     if (d < bestD) {
@@ -144,12 +156,25 @@ public final class SwimToShore {
             end(Phase.FAILED, "timeout");
             return;
         }
-        // Out once standing on dry ground for a few ticks.
+        // Out once standing on dry ground for a few ticks. Keys off: with jump held it hopped on
+        // the bank and never stood four ticks in a row (01.11).
         if (!inWater(p) && p.isOnGround()) {
+            release();
             if (++dryTicks >= 4) end(Phase.DONE, "ashore");
             return;
         }
         dryTicks = 0;
+        // Deep under: straight up first. Swimming forward from the bottom it pressed into the
+        // foot of the bank and never came up (31.10, 16 blocks of water).
+        if (p.isSubmergedInWater() && surface(client, p) - p.getY() > 2) {
+            p.setPitch(-90);
+            client.options.forwardKey.setPressed(false);
+            client.options.jumpKey.setPressed(true);
+            client.options.sprintKey.setPressed(false);
+            lastX = p.getX();
+            lastZ = p.getZ();
+            return;
+        }
         // No progress for 3 s (a wall of a bank too high): try the next shore over.
         if (ticks % 60 == 0) {
             if (Math.hypot(p.getX() - lastX, p.getZ() - lastZ) < 1.0 && ++stuckTicks >= 1) {
