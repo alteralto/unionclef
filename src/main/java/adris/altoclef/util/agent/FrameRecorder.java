@@ -21,9 +21,12 @@ import java.util.concurrent.BlockingQueue;
  * (a window on a 1080 screen loses a few rows to the frame and the taskbar). Test videos used to be PNG screenshots pulled over py4j: each one
  * stalled the game while it was encoded, ~3 frames a second and a stuttering game.
  *
- * <p>ffmpeg is the program named in the settings (recordFfmpeg); videos go to
- * {@code <game dir>/recordings/<name>.mp4}. Neither is taken from the caller: the MCP server listens on
- * the LAN, and a path to run would let anyone with the token start any program here.
+ * <p>ffmpeg is the program named on the first line of {@code <game dir>/altoclef/recorder_ffmpeg.txt};
+ * videos go to {@code <game dir>/recordings/<name>.mp4}. Neither comes from a command: the MCP server
+ * listens on the LAN, and a program path in a command would let anyone with the token start any
+ * program here. Not a setting either: {@code @set} reaches every setting, and saves all of them from
+ * the client's memory, so a path written into the settings file was also wiped by the next {@code @set}
+ * of a client started before it.
  */
 public final class FrameRecorder {
 
@@ -44,9 +47,9 @@ public final class FrameRecorder {
     /** Start recording; fps up to 20 (one frame a client tick). Call on the client thread. */
     public static synchronized Map<String, Object> start(String videoName, int fps) {
         if (on) stop();
-        String exe = AltoClef.getInstance() == null ? "" : AltoClef.getInstance().getModSettings().getRecordFfmpeg();
-        if (exe == null || exe.isBlank() || !new File(exe).isFile()) {
-            return result(false, "set recordFfmpeg in altoclef_settings.json to ffmpeg.exe");
+        String exe = ffmpegPath();
+        if (exe.isBlank() || !new File(exe).isFile()) {
+            return result(false, "put the path of ffmpeg.exe on the first line of altoclef/recorder_ffmpeg.txt");
         }
         String safe = (videoName == null ? "" : videoName).replaceAll("[^A-Za-z0-9_.-]", "_");
         if (safe.isEmpty() || safe.startsWith(".")) safe = "rec-" + System.currentTimeMillis();
@@ -66,6 +69,16 @@ public final class FrameRecorder {
         proc = null;
         on = true;
         return result(true, "");
+    }
+
+    private static String ffmpegPath() {
+        File f = new File(new File(MinecraftClient.getInstance().runDirectory, "altoclef"), "recorder_ffmpeg.txt");
+        try {
+            var lines = java.nio.file.Files.readAllLines(f.toPath());
+            return lines.isEmpty() ? "" : lines.get(0).trim();
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     /** Stop and finish the file; waits for ffmpeg up to a minute. The wait holds no lock: frames

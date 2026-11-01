@@ -107,5 +107,6 @@ Show course (11 rings, a glass tunnel, a slalom, a dive by the ground), solo: al
 
 - `tungsten/.../elytra/ElytraPhysics.java`, `ElytraSolver.java`
 - `src/.../util/agent/ElytraFlight.java` (`steer`, `followSlot`, `startRings`), `FlightViz.java`,
-  `FlightLog.java`, `FrameRecorder.java` (game-only video for the bench: `recordStart`/`recordStop`)
+  `FlightLog.java`, `FrameRecorder.java` (game-only video for the bench: `recordStart`/`recordStop`;
+  ffmpeg named in `<game>/altoclef/recorder_ffmpeg.txt`)
 - `tools/elytra/bench/` -- the bench (README there)

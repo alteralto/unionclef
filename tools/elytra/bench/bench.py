@@ -182,8 +182,8 @@ def watch(status_tool, seconds, nick=None):
 
 
 class Video:
-    """Recorded by the mod (recordStart): the game window only, 1920x1080, 20 fps. Needs recordFfmpeg
-    in altoclef_settings.json; without it the test simply runs unfilmed."""
+    """Recorded by the mod (recordStart): the game window only, 1920x1080, 20 fps. Needs the path of
+    ffmpeg in <game>/altoclef/recorder_ffmpeg.txt; without it the test simply runs unfilmed."""
 
     def __init__(self, name, on=True, nick=None):
         self.nick, self.on = nick or BOT, on
