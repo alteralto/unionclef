@@ -161,6 +161,35 @@ MAZE_WALLS = [  # (x, colour, gap z from, gap y from) -- gaps are 9x9
     (660, "red", MAZE_Z - 16, F + 3), (720, "blue", MAZE_Z + 8, F + 19), (780, "lime", MAZE_Z - 4, F + 11)]
 
 
+# The compact maze: the same three gaps, walls 25 apart instead of 60, a hall 112 long -- all of it
+# within the view distance (8 chunks, 128 blocks) from where the glider is after its take-off, so the
+# test is the way through the gaps and its physics, not finding out what lies beyond sight (the long
+# hall tests that). The climbs are steeper.
+MAZE2_Z = -320
+MAZE2_X1 = 712
+MAZE2_WALLS = [(627, "red", MAZE2_Z - 16, F + 3), (652, "blue", MAZE2_Z + 8, F + 19), (677, "lime", MAZE2_Z - 4, F + 11)]
+
+
+def in_maze(p, compact=False):
+    """Feet inside the maze hall: under its roof, between its side walls (not on the roof, not beside it)."""
+    x, y, z = p[0], p[1], p[2]
+    mz, x1 = (MAZE2_Z, MAZE2_X1) if compact else (MAZE_Z, 840)
+    return 600 < x < x1 and F <= y < F + 30 and mz - 21 < z < mz + 21
+
+
+def maze_compact():
+    z0, z1 = MAZE2_Z - 21, MAZE2_Z + 21
+    cmd("forceload add 540 -360 760 -280",
+        f"fill 600 {F} {z0} {MAZE2_X1} {F} {z1} minecraft:glass",
+        f"fill 600 {F+30} {z0} {MAZE2_X1} {F+30} {z1} minecraft:glass",
+        f"fill 600 {F} {z0} {MAZE2_X1} {F+30} {z0} minecraft:glass",
+        f"fill 600 {F} {z1} {MAZE2_X1} {F+30} {z1} minecraft:glass",
+        f"fill {MAZE2_X1} {F} {z0} {MAZE2_X1} {F+30} {z1} minecraft:glass")
+    for x, colour, gz, gy in MAZE2_WALLS:
+        cmd(f"fill {x} {F+1} {z0+1} {x+1} {F+29} {z1-1} minecraft:{colour}_concrete",
+            f"fill {x} {gy} {gz} {x+1} {gy+8} {gz+8} minecraft:air")
+
+
 def maze():
     z0, z1 = MAZE_Z - 21, MAZE_Z + 21
     # face by face: one hollow fill of the whole hall is ten times the 32768 blocks fill allows

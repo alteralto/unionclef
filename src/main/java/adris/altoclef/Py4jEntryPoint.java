@@ -5881,8 +5881,8 @@ public class Py4jEntryPoint {
     }
 
     /** Elytra steering for this client only, not saved (ElytraFlight.flySettings). */
-    public Map<String, Object> flySettings(Boolean solver, Boolean routeSearch, Double rocketCost) {
-        return adris.altoclef.util.agent.ElytraFlight.flySettings(solver, routeSearch, rocketCost);
+    public Map<String, Object> flySettings(Boolean solver, Boolean routeSearch, Boolean routePlan, Double rocketCost) {
+        return adris.altoclef.util.agent.ElytraFlight.flySettings(solver, routeSearch, routePlan, rocketCost);
     }
 
     /** Fly through rings: centres "x,y,z;x,y,z;..." in order (ElytraFlight.startRings). */

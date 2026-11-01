@@ -88,7 +88,8 @@ def t_maze():
     st = info["status"]
     info["routeSearch"] = st.get("routeSearch")
     info["ringMiss"] = st.get("ringMiss")
-    return ok and st.get("reason") != "blocked", info
+    info["inside"] = bench.in_maze(info["end"])  # landed in the hall, not on its roof
+    return ok and st.get("reason") != "blocked" and info["inside"], info
 
 
 def t_tank_swim():
