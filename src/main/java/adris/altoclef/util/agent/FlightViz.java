@@ -110,6 +110,16 @@ public final class FlightViz {
                     if (i > 0) out.add(new Line(new Vec3d(route[i - 1][0], route[i - 1][1], route[i - 1][2]), w, ROUTE));
                 }
             }
+            var ap = f.airPlan();
+            if (ap != null) { // the planned flight ahead, and where it fires its rockets
+                int from = Math.max(0, f.airPlanIdx());
+                for (int i = from + 2; i < ap.size(); i += 2) {
+                    out.add(new Line(ap.get(i - 2).pos().add(0, 0.3, 0), ap.get(i).pos().add(0, 0.3, 0), ROUTE));
+                }
+                for (int i = from; i < ap.size(); i++) {
+                    if (ap.get(i).fire()) out.add(box(ap.get(i).pos().add(0, 0.3, 0), 0.9, BOOSTED));
+                }
+            }
             if (f.leader() == null) {
                 out.add(new Cuboid(new Vec3d(f.tx() - 0.5, f.ty(), f.tz() - 0.5), new Vec3d(1, 2, 1), TARGET));
             }

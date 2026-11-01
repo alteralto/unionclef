@@ -79,7 +79,7 @@ public final class ElytraPhysics {
         for (int i = 0; i < ticks; i++) {
             motion = step(motion, yaw, pitch, i < rocketTicks);
             Vec3d next = pos.add(motion);
-            if (world != null && blocked(world, next)) {
+            if (world != null && blocked(world, pos, next)) {
                 hit = true;
                 break;
             }
@@ -91,7 +91,16 @@ public final class ElytraPhysics {
 
     /** The gliding box (0.6 x 0.6) at these feet touches a block with collision. */
     public static boolean blocked(BlockView world, Vec3d feet) {
-        Box b = new Box(feet.x - 0.3, feet.y, feet.z - 0.3, feet.x + 0.3, feet.y + 0.6, feet.z + 0.3);
+        return blocked(world, feet, feet);
+    }
+
+    /** The gliding box anywhere on its way from one tick's feet to the next touches a block: the box
+     *  around both. Checking the ends alone let a glide at 1.7 blocks a tick pass through a wall one
+     *  block thick -- a plan once flew outside a glass hall that way and dropped in through its side
+     *  (01.11). A little stricter than the true sweep past a corner, never more lenient. */
+    public static boolean blocked(BlockView world, Vec3d from, Vec3d to) {
+        Box b = new Box(Math.min(from.x, to.x) - 0.3, Math.min(from.y, to.y), Math.min(from.z, to.z) - 0.3,
+                Math.max(from.x, to.x) + 0.3, Math.max(from.y, to.y) + 0.6, Math.max(from.z, to.z) + 0.3);
         for (int x = MathHelper.floor(b.minX); x <= MathHelper.floor(b.maxX); x++) {
             for (int y = MathHelper.floor(b.minY); y <= MathHelper.floor(b.maxY); y++) {
                 for (int z = MathHelper.floor(b.minZ); z <= MathHelper.floor(b.maxZ); z++) {

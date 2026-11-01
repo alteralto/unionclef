@@ -92,20 +92,83 @@ rockets; how close it keeps is the follow point above.
 Show course (11 rings, a glass tunnel, a slalom, a dive by the ground), solo: all 11 passed, at most
 3.2 blocks off centre, 8 rockets; three bots two seconds apart: 33 of 33, 7-10 rockets each.
 
+## The way through: cells, then a flight the physics can fly
+
+With `elytraRouteSearch` on (and the solver), the way to the target is searched in two layers, on a
+worker thread, while the glider circles or holds its look.
+
+1. **Cells** (`AirRoute.cells`): the world in 4-block cells, a cell open when nothing in it has
+   collision; A* over 26 neighbours, a climb dearer than a descent, a cell by a wall dearer, a cell
+   the client has not got (beyond the view distance) dearer still. The chain is cut where it first
+   enters unseen chunks: the flight goes as far as it has been seen, and the cut moves on as the
+   chunks come in.
+2. **A flight in the corridor** (`AirPlan`): the open cells within two of the chain (and around the
+   start), their blocks read once into memory. A state is position, velocity, look and the ticks the
+   rocket still pulls; a move holds one look for 8 ticks, with or without a fresh rocket, turned no
+   faster than the bot turns, flown through `ElytraPhysics`. A move that touches a block (0.8 blocks of
+   room kept around the body) or leaves the corridor is out. Cost: ticks, plus the rocket's price in
+   ticks. Weighted A* with a lower bound of what is left: the corridor distance at top speed, and the
+   rockets the energy (height + v^2/0.16) cannot do without -- a glide loses at least 0.099 of it a
+   block, a rocket adds at most 45.
+
+Why the second layer: the cells know where the gaps are, not whether a glider gets from a low one up to
+a high one. A climb needs the speed taken in before it, so the rocket has to burn where the climb is
+still seconds away, further than the solver's two seconds see. Flying the cells' corners as rings,
+the bot stalled under the high gap.
+
+**Flying the plan** (`ElytraFlight.flyAirPlan`): the plan's looks and rockets, tick by tick (a rocket used
+a tick early, as it pulls from the tick after). A new plan is made from the state predicted 6 ticks
+on, the old plan's looks held till then, whenever the glider is 1.5 blocks off the plan (a rocket pulls
+20 to 31 ticks; the plan assumes 25) or the plan runs out, and every 2 s while the way is not all in
+sight. Before every tick the plan's next 12 looks are flown from where the glider really is; if they
+would hit, the solver steers that tick, through the plan a second on. No progress along the way for
+6 s, or no plan three times: the corners are flown as rings, as before (`flySettings{routePlan:false}`
+does that from the start, for a comparison).
+
+Found on the way there (01.11):
+- **Collisions were checked at the ends of each tick only.** At 1.7 blocks a tick a glide passed through
+  a wall one block thick between two checks; a plan flew outside a glass hall and in through its
+  side. `ElytraPhysics.blocked(from, to)` checks the box around both ends now; the solver's
+  predictions use it too.
+- **A target under a roof was a landing on the roof.** `landingY` took the top of the column. With the
+  route search on, it lands on the floor under the height asked for. The maze "passes" before that were
+  landings on the hall's roof; the bench now counts a pass only inside the hall.
+- **Beyond the view distance the world reads as air.** At 8 chunks the client sees 128 blocks; the long
+  maze is 240. Planned through the unseen, the way went along the outside of the hall, or over its
+  roof, and had to turn back to the door when the far end came into sight.
+
+On the bench, the compact maze (`mazeseries.py --compact`: the bench's three gaps, walls 25 apart, all
+in sight from the take-off), ten flights each, a pass only when it lands inside the hall:
+
+| | through | rockets | seconds |
+|---|---|---|---|
+| corners as rings (`routePlan:false`) | 5 of 10 | 3.0 | 10.5 |
+| physics plan, creative price (12) | 9 of 10 (one of them after falling back to the corners) | 5.0 | 11.0 |
+| physics plan, survival price (40) | 10 of 10 | 4.7 | 10.9 |
+
+The plan buys the pass with a rocket or two more at the creative price: a rocket where the climb to
+the high gap needs it. The failures left: a glider pushed off the plan by the rocket's random 20..31
+ticks, near the edge of the low gap, where no new plan finds a way and it slides up the wall.
+
+Prototype and measurements of the layer alone (`scratchpad`-style JS with the same physics, rocket
+pulls drawn 20..31, the 6-tick replanning delay): four hall layouts (the bench's, high-low-high,
+four walls, a zigzag), 20 flights each at both rocket prices: 155 of 160 through; the corners as
+rings, 1 to 18 of 30.
+
 ## Not done yet
 
-- **A route search through the air** (the "BFS like the water one"): today the goal is a point 60 blocks
-  ahead at cruise height, and obstacles are only seen two seconds ahead. A coarse 3D grid search for
-  the way round (and under, and through) comes next.
-- **Planning off the client thread, circling while it plans.** The solver runs on the client thread
-  (a few milliseconds every other tick); a route search will not.
+- **Exploring what is out of sight.** The long maze (beyond the view distance from the take-off) is
+  flown by finding out: along the outside, back to the door, through the gaps. That works some of the
+  time (one pass in three on the bench: 23 plans, 34 s, 12 rockets) and is the next thing to make
+  dependable.
 - **Landing on the solver** and figures (tricks) on it; the PI pilot still does both.
 - Pursuers do not follow a leader through a tunnel: the goal point lies beyond the wall, so they go
   round and fall behind.
 
 ## Files
 
-- `tungsten/.../elytra/ElytraPhysics.java`, `ElytraSolver.java`
+- `tungsten/.../elytra/ElytraPhysics.java`, `ElytraSolver.java`, `AirRoute.java` (cells, corridor),
+  `AirPlan.java` (the flight in the corridor)
 - `src/.../util/agent/ElytraFlight.java` (`steer`, `followSlot`, `startRings`), `FlightViz.java`,
   `FlightLog.java`, `FrameRecorder.java` (game-only video for the bench: `recordStart`/`recordStop`;
   ffmpeg named in `<game>/altoclef/recorder_ffmpeg.txt`)
