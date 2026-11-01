@@ -170,8 +170,12 @@ rings, 1 to 18 of 30.
 
 - **Exploring what is out of sight.** The long maze (beyond the view distance from the take-off) is
   flown by finding out: along the outside, back to the door, through the gaps. That works some of the
-  time (one pass in three on the bench: 23 plans, 34 s, 12 rockets) and is the next thing to make
-  dependable.
+  time (on the morning of 01.11, one pass in five: 16 plans, 32 s, 13 rockets) and is the next thing to
+  make dependable. Two ways it fails: from over the roof at the far end the cell search does not find
+  the way back to the door within 150 000 cells (the open sky above is searched first; a plan then
+  took up to 4.5 s), and it gives up and lands outside.
+- After the bench agent ran on a client and was stopped, flights on that client could not take off
+  until the client was restarted. Not looked into yet.
 - **Landing on the solver** and figures (tricks) on it; the PI pilot still does both.
 - Pursuers do not follow a leader through a tunnel: the goal point lies beyond the wall, so they go
   round and fall behind.
