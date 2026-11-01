@@ -70,8 +70,9 @@ crosses its plane square to the way in, and `flyStatus.ringMiss` gives how far o
 (the larger of up/down and sideways, as a square frame sees it).
 
 In pursuit every pursuer aims a second ahead of the leader, 6 blocks behind on their track and 5 to one
-side; the side comes from the pursuer's name, and any other glider within 10 blocks pushes the point
-away. On one shared point two pursuers flew wing in wing and landed 0.2 blocks apart.
+side: the side it is already on (it changes only 3 blocks past the track), so two pursuers keep apart
+without crossing. Another glider within 10 blocks pushes the point sideways only, 6 blocks at most, and
+the point is smoothed. On one shared point two pursuers flew wing in wing and landed 0.2 blocks apart.
 
 ## Numbers (test bench, 01.11.2026)
 
@@ -88,6 +89,11 @@ All 11 bench checks pass on both the pilot and the solver. Rockets and seconds:
 Pursuit of a leader flying a five-point route (the leader spent 7-8 rockets): PI pilot 13-15 rockets,
 14-16 blocks behind; solver 7-8 rockets, 23-33 blocks behind. The solver does not buy closeness with
 rockets; how close it keeps is the follow point above.
+
+Since the pursuers keep apart (the side, then the sideways push) the solver pursuer is worse: two runs
+on 01.11 morning, leader 6-7 rockets, solver 9 and 9 rockets, 38 and 49 blocks behind (median); the PI
+pilot 20 and 9 rockets, 17 and 10 behind. Not solved: closeness against rockets is the choice to make
+(the solver prices a rocket at 12 blocks of progress and lets the leader go rather than pay).
 
 Show course (11 rings, a glass tunnel, a slalom, a dive by the ground), solo: all 11 passed, at most
 3.2 blocks off centre, 8 rockets; three bots two seconds apart: 33 of 33, 7-10 rockets each.
