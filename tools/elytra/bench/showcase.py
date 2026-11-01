@@ -7,6 +7,8 @@ HUD off (the mod's recorder, 1920x1080) -- and the pursuit check.
     python showcase.py chase          -- the second client flies it, the others chase it (flyFollow)
     python showcase.py follow         -- pursuit check: the second client flies a plain route, the bot
                                          follows on the solver and the third on the PI pilot
+    python showcase.py maze           -- the bot flies the maze hall (bench.maze) with the route search
+    python showcase.py maze3          -- all clients through the maze, three seconds apart
     ... [--no-video] [--hud]
 
 The course, east along z = 200 from x = 0: three rings climbing, a glass tunnel 40 long with a 7x7
@@ -68,6 +70,39 @@ def wait_airborne(nick, seconds=20):
         time.sleep(0.3)
 
 
+def fly_maze(all_three, video, hud):
+    bench.maze()
+    flyers = NICKS if all_three else [BOT]
+    for nick in NICKS:
+        mcp("ExecuteCommand", {"cmd": "@stop"}, nick=nick)
+        mcp("flyStop", nick=nick)
+    for i, nick in enumerate(flyers):
+        mcp("flySettings", {"solver": True}, nick=nick)
+        mcp("flySettings", {"routeSearch": True}, nick=nick)
+        kit(nick, 560 - 25 * i, bench.MAZE_Z + 4 * i)
+    time.sleep(2)
+    mcp("camera", {"perspective": 1, "hud": hud})
+    v = Video("maze3" if all_three else "maze", video)
+    t0 = time.time()
+    for nick in flyers:
+        mcp("flyTo", {"x": 820, "y": F, "z": bench.MAZE_Z}, nick=nick)
+        time.sleep(3 if all_three else 0)
+    while time.time() - t0 < 120:
+        sts = {n: mcp("flyStatus", nick=n) for n in flyers}
+        if all(st.get("phase") in ("done", "failed", "idle") for st in sts.values()):
+            break
+        time.sleep(1)
+    time.sleep(3)
+    sts = {n: mcp("flyStatus", nick=n) for n in flyers}
+    for nick in flyers:
+        mcp("flySettings", {"routeSearch": False}, nick=nick)
+    mcp("camera", {"perspective": 0, "hud": True})
+    out = {n: {k: st.get(k) for k in ("phase", "reason", "rocketsUsed", "routeSearch", "pos")} for n, st in sts.items()}
+    out["seconds"] = round(time.time() - t0)
+    out["video"] = v.stop()
+    print(json.dumps(out, ensure_ascii=False, indent=1))
+
+
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "solo"
     video = "--no-video" not in sys.argv
@@ -75,12 +110,14 @@ def main():
     build()
     if mode == "build":
         return
+    if mode in ("maze", "maze3"):
+        return fly_maze(mode == "maze3", video, hud)
     lead = NICKS[1] if len(NICKS) > 1 else BOT
     for i, nick in enumerate(NICKS):
         mcp("ExecuteCommand", {"cmd": "@stop"}, nick=nick)
         mcp("flyStop", nick=nick)
         on = not (mode == "follow" and i == 2)  # follow: the third client keeps the PI pilot
-        mcp("ExecuteCommand", {"cmd": f"@set elytraSolver {'true' if on else 'false'}"}, nick=nick)
+        mcp("flySettings", {"solver": on}, nick=nick)
     starts = [(-6, Z), (0, Z + 6), (-6, Z + 12)]
     if mode == "race":
         starts = [(-30, Z), (0, Z), (-60, Z)]

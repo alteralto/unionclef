@@ -635,11 +635,6 @@ public class Settings implements IFailableConfigFile {
         return voiceUdpPort;
     }
 
-    /**
-     * ffmpeg.exe for recordStart (util/agent/FrameRecorder): game-only video, encoded outside the
-     * game. Empty: recording off. Set here only, never by a command: the MCP server is on the LAN.
-     */
-    private String recordFfmpeg = "";
 
     /**
      * Elytra en route and in pursuit steered by tungsten's trajectory solver (ElytraSolver: candidate
@@ -658,13 +653,21 @@ public class Settings implements IFailableConfigFile {
         return elytraSolver;
     }
 
+    /**
+     * With the solver: before flying to a point, search the way through the air on a coarse grid
+     * (tungsten AirRoute, on a worker while the glider circles) and fly its corners like rings.
+     * For halls, canyons, a way through a gap instead of over. Off: straight at cruise height.
+     */
+    private boolean elytraRouteSearch = false;
+
+    public boolean isElytraRouteSearch() {
+        return elytraRouteSearch;
+    }
+
     public double getElytraRocketCost() {
         return elytraRocketCost;
     }
 
-    public String getRecordFfmpeg() {
-        return recordFfmpeg;
-    }
 
     /**
      * MCP server (Model Context Protocol over Streamable HTTP) hosted directly

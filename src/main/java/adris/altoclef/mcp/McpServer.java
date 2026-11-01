@@ -253,6 +253,13 @@ public class McpServer {
                         + "hud (bool) false hides the HUD.",
                 schema(), a -> api.camera(a.has("perspective") ? a.get("perspective").getAsInt() : 0,
                         !a.has("hud") || a.get("hud").getAsBoolean()));
+        tool("flySettings", "Elytra steering for this client only, not saved to the shared settings file: "
+                        + "solver (bool), routeSearch (bool), rocketCost (number, below 0: by game mode). "
+                        + "Any left out stays as it is; returns what is in force.",
+                schema(), a -> api.flySettings(
+                        a.has("solver") ? a.get("solver").getAsBoolean() : null,
+                        a.has("routeSearch") ? a.get("routeSearch").getAsBoolean() : null,
+                        a.has("rocketCost") ? a.get("rocketCost").getAsDouble() : null));
         tool("flyRings",
                 "Elytra through rings: centres \"x,y,z;x,y,z;...\" in order, each crossed square to the way in; "
                 + "lands 60 blocks past the last. flyStatus: waypoint k/n, ringMiss (blocks off centre per ring).",
@@ -279,7 +286,7 @@ public class McpServer {
         tool("flyStatus", "Current elytra flight: phase, reason, distance, rockets used.", schema(),
                 a -> api.flyStatus());
         tool("recordStart", "Record the game window to <game dir>/recordings/<name>.mp4 (encoded by the ffmpeg "
-                        + "set in recordFfmpeg, outside the game). Optional fps (int) up to 20, default 20.",
+                        + "named in altoclef/recorder_ffmpeg.txt, outside the game). Optional fps (int) up to 20, default 20.",
                 schema("name:string"),
                 a -> api.recordStart(argStr(a, "name"), a.has("fps") ? a.get("fps").getAsInt() : 20));
         tool("flightLog", "The last n ticks of elytra gliding: tick, x, y, z, vx, vy, vz, yaw, pitch, rocket "

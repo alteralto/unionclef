@@ -16,9 +16,10 @@ What it found so far is in `docs/features/ELYTRA_TUNGSTEN.md`.
 2. Clients: start one to three game clients with the mod and join `127.0.0.1` (offline names are fine:
    the server is in offline mode). The first client's MCP server is on 25350, the next take 25351,
    25352. Name them in `BENCH_CLIENTS` if they are not `arcmlchikkk`, `pyhtun_lead`, `pyhtun_wing`.
-3. For videos, set `recordFfmpeg` in `altoclef_settings.json` to an ffmpeg executable. Without it the
-   checks run unfilmed. (The recorder takes ffmpeg from the settings only: the MCP server listens on
-   the LAN, and a program path in a command would let anyone with the token run anything.)
+3. For videos, put the path of an ffmpeg executable on the first line of
+   `<game dir>/altoclef/recorder_ffmpeg.txt`. Without it the checks run unfilmed. (Not a setting and not
+   a command argument: the MCP server listens on the LAN, `@set` reaches every setting, and a program
+   path anyone with the token can change would let them run anything.)
 4. Optional `local.json` here (git-ignored): `{"MC_SETTINGS": "...", "FFMPEG": "..."}`.
 
 Python 3.10+, standard library only. Everything a run writes goes to `out/`.

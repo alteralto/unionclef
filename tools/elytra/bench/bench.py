@@ -153,6 +153,28 @@ def arena():
             f"fill {x} {y-3} {z-3} {x} {y+3} {z+3} minecraft:air")
 
 
+# The maze: a glass hall 240 long, 40 wide, 30 high, open at its west end, cut by three coloured walls,
+# each with one 9x9 gap: low on the left, high on the right, in the middle. Straight at cruise height
+# hits the ceiling; the way is through the gaps (route search: elytraRouteSearch).
+MAZE_Z = -200
+MAZE_WALLS = [  # (x, colour, gap z from, gap y from) -- gaps are 9x9
+    (660, "red", MAZE_Z - 16, F + 3), (720, "blue", MAZE_Z + 8, F + 19), (780, "lime", MAZE_Z - 4, F + 11)]
+
+
+def maze():
+    z0, z1 = MAZE_Z - 21, MAZE_Z + 21
+    # face by face: one hollow fill of the whole hall is ten times the 32768 blocks fill allows
+    cmd("forceload add 540 -240 860 -160",
+        f"fill 600 {F} {z0} 840 {F} {z1} minecraft:glass",            # floor
+        f"fill 600 {F+30} {z0} 840 {F+30} {z1} minecraft:glass",      # ceiling
+        f"fill 600 {F} {z0} 840 {F+30} {z0} minecraft:glass",         # side walls
+        f"fill 600 {F} {z1} 840 {F+30} {z1} minecraft:glass",
+        f"fill 840 {F} {z0} 840 {F+30} {z1} minecraft:glass")         # the far end; the west end is the way in
+    for x, colour, gz, gy in MAZE_WALLS:
+        cmd(f"fill {x} {F+1} {z0+1} {x+1} {F+29} {z1-1} minecraft:{colour}_concrete",
+            f"fill {x} {gy} {gz} {x+1} {gy+8} {gz+8} minecraft:air")
+
+
 def reset(x, z, rockets_in_hotbar=True, y=None, yaw=0, nick=None):
     """A clean start: creative, an elytra, 64 rockets (in the backpack if asked), at x, z."""
     nick = nick or BOT
@@ -182,8 +204,8 @@ def watch(status_tool, seconds, nick=None):
 
 
 class Video:
-    """Recorded by the mod (recordStart): the game window only, 1920x1080, 20 fps. Needs recordFfmpeg
-    in altoclef_settings.json; without it the test simply runs unfilmed."""
+    """Recorded by the mod (recordStart): the game window only, 1920x1080, 20 fps. Needs the path of
+    ffmpeg in <game>/altoclef/recorder_ffmpeg.txt; without it the test simply runs unfilmed."""
 
     def __init__(self, name, on=True, nick=None):
         self.nick, self.on = nick or BOT, on
