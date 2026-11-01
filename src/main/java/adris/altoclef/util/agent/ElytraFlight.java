@@ -214,6 +214,10 @@ public final class ElytraFlight {
 
     private static Map<String, Object> begin(double x, double y, double z, boolean low, int tricks) {
         register();
+        // A creative hover left on (hoverTo, hoverFollow) turns creative flight back on every tick,
+        // and the take-off turns it off every tick: the wings never opened (01.11, after the agent
+        // was stopped mid-hover, until the client was restarted).
+        if (CreativeWingman.active()) CreativeWingman.stop("elytra flight");
         lowLevel = low;
         tricksWanted = Math.max(0, Math.min(tricks, 8));
         rescue = false;
