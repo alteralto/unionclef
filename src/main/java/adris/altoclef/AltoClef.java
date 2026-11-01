@@ -733,7 +733,9 @@ public class AltoClef implements ModInitializer {
 
     private void onClientRenderOverlay(DrawContextWrapper context) {
         context.setRenderLayer(RenderLayerVer.getGuiOverlay());
-        if (settings.shouldShowTaskChain()) {
+        // F1 (the HUD hidden) hides the task line too, as it does the rest of the HUD: recordings
+        // and screenshots without it
+        if (settings.shouldShowTaskChain() && !MinecraftClient.getInstance().options.hudHidden) {
             commandStatusOverlay.render(this, context);
         }
 

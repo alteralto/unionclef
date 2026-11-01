@@ -87,7 +87,8 @@ def fly_maze(all_three, video, hud, compact=False, old=False):
     for i, nick in enumerate(flyers):
         mcp("flySettings", {"solver": True}, nick=nick)
         mcp("flySettings", {"routeSearch": True, "routePlan": not old}, nick=nick)
-        kit(nick, 560 - 25 * i, mz + 4 * i)
+        # one take-off line, 8 apart across it: from further back the far end is out of sight
+        kit(nick, 560, mz - 8 + 8 * i)
     time.sleep(2)
     mcp("camera", {"perspective": 1, "hud": hud})
     v = Video(("maze2" if compact else "maze") + ("x3" if all_three else "") + ("-old" if old else ""), video)

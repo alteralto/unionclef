@@ -91,7 +91,7 @@ def hook(tmp, i, c):
     sub = textfile(tmp, f"hs{i}.txt", c.get("sub", ""))
     vf = (f"setpts=PTS/{speed},fps={FPS},{push_in(seconds, c.get('zoom', 0.08))},"
           f"drawbox=x=0:y=ih-250:w=iw:h=250:color={PAPER}@0.72:t=fill,"
-          f"drawtext=fontfile='{FONT_B}':textfile='{line}':fontsize=72:fontcolor={INK}:x=(w-text_w)/2:y=h-215,"
+          f"drawtext=fontfile='{FONT_B}':textfile='{line}':fontsize=62:fontcolor={INK}:x=(w-text_w)/2:y=h-215,"
           f"drawtext=fontfile='{FONT}':textfile='{sub}':fontsize=36:fontcolor={MUTED}:x=(w-text_w)/2:y=h-110")
     return encode(["-ss", str(c.get("from", 0)), "-to", str(c.get("to", 9999)), "-i", c["hook"], "-vf", vf],
                   pathlib.Path(tmp) / f"{i:02d}.mp4")
