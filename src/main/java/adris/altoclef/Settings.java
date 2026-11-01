@@ -635,11 +635,6 @@ public class Settings implements IFailableConfigFile {
         return voiceUdpPort;
     }
 
-    /**
-     * ffmpeg.exe for recordStart (util/agent/FrameRecorder): game-only video, encoded outside the
-     * game. Empty: recording off. Set here only, never by a command: the MCP server is on the LAN.
-     */
-    private String recordFfmpeg = "";
 
     /**
      * Elytra en route and in pursuit steered by tungsten's trajectory solver (ElytraSolver: candidate
@@ -662,9 +657,6 @@ public class Settings implements IFailableConfigFile {
         return elytraRocketCost;
     }
 
-    public String getRecordFfmpeg() {
-        return recordFfmpeg;
-    }
 
     /**
      * MCP server (Model Context Protocol over Streamable HTTP) hosted directly
