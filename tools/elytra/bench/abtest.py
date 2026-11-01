@@ -21,7 +21,7 @@ def main():
     rows = []
     for name in want:
         for solver in (False, True):
-            bench.mcp("ExecuteCommand", {"cmd": f"@set elytraSolver {'true' if solver else 'false'}"})
+            bench.mcp("flySettings", {"solver": solver})
             time.sleep(1)
             v = bench.Video(f"{name}-{'solver' if solver else 'pilot'}", video)
             try:
@@ -35,7 +35,7 @@ def main():
                    "off": info.get("off_target"), "video": clip}
             rows.append(row)
             print(json.dumps(row, ensure_ascii=False), flush=True)
-    bench.mcp("ExecuteCommand", {"cmd": "@set elytraSolver false"})
+    bench.mcp("flySettings", {"solver": False})
     res = bench.OUT / "results"
     res.mkdir(parents=True, exist_ok=True)
     (res / f"ab-{time.strftime('%Y%m%d-%H%M%S')}.json").write_text(json.dumps(rows, ensure_ascii=False, indent=1),

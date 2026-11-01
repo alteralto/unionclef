@@ -49,6 +49,18 @@ public final class ElytraFlight {
     private static double lastX, lastY, lastZ;
     private static double[] ringStart = new double[3]; // where the gliding began: the way into ring 1
     private static net.minecraft.util.math.Vec3d throughNext; // the ring centre the next plan must pass
+    // Route search (elytraRouteSearch): the corners come from a worker; until then it circles.
+    private static volatile java.util.concurrent.CompletableFuture<java.util.List<net.minecraft.util.math.Vec3d>> search;
+    private static volatile String searchState = "";
+    private static boolean landAtTarget;      // rings from a search: land at the target, not 60 on
+    private static double ringBest;           // closest to the current ring so far, and when
+    private static int ringBestTick, researches;
+    private static double finalX, finalY, finalZ;
+    private static final java.util.concurrent.ExecutorService SEARCH = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "elytra-route");
+        t.setDaemon(true);
+        return t;
+    });
     private static final ElytraPilot pilot = new ElytraPilot();
     private static boolean pilotReady;
     private static volatile ElytraPilot.Out lastOut;
@@ -197,6 +209,10 @@ public final class ElytraFlight {
         solverSteered = false;
         rings = false;
         ringMiss.clear();
+        search = null;
+        searchState = "";
+        landAtTarget = false;
+        researches = 0;
         reason = "";
         phase = Phase.EQUIP;
         FlightViz.newFlight();
@@ -216,6 +232,8 @@ public final class ElytraFlight {
         route = centres;
         routeIdx = 0;
         rings = true;
+        ringBest = Double.MAX_VALUE;
+        ringBestTick = Integer.MAX_VALUE; // set on the first gliding tick
         return status();
     }
 
@@ -248,11 +266,44 @@ public final class ElytraFlight {
                 tx = c[0] + nx / Math.max(Math.hypot(nx, nz), 1e-6) * 60;
                 tz = c[2] + nz / Math.max(Math.hypot(nx, nz), 1e-6) * 60;
                 ty = c[1];
+                if (landAtTarget) { // a searched route ends over the target: land there
+                    tx = finalX;
+                    ty = finalY;
+                    tz = finalZ;
+                }
                 pilot.resetForLanding(p.getYaw(), p.getPitch());
                 solverSteered = false;
                 return;
             }
             c = r[routeIdx];
+            ringBest = Double.MAX_VALUE;
+            ringBestTick = ticks;
+        }
+        // No nearer to the ring for 5 s: boxed in (once it burned 120 rockets in the top corner of a
+        // hall). A searched way is searched again from here, twice; then, or for rings, it gives up.
+        double dRing = Math.sqrt((px - c[0]) * (px - c[0]) + (py - c[1]) * (py - c[1]) + (pz - c[2]) * (pz - c[2]));
+        if (dRing < ringBest - 1 || ringBestTick > ticks) {
+            ringBest = dRing;
+            ringBestTick = ticks;
+        } else if (ticks - ringBestTick > 100) {
+            ringBest = Double.MAX_VALUE;
+            ringBestTick = ticks;
+            if (landAtTarget && researches < 2) {
+                researches++;
+                rings = false;
+                route = null;
+                landAtTarget = false;
+                search = null;
+                tx = finalX;
+                ty = finalY;
+                tz = finalZ;
+                searchState = "searching again";
+                return;
+            }
+            rings = false;
+            route = null;
+            fail("blocked");
+            return;
         }
         tx = c[0];
         ty = c[1];
@@ -303,6 +354,7 @@ public final class ElytraFlight {
         var r = route;
         if (r != null) m.put("waypoint", (routeIdx + 1) + "/" + r.length);
         if (rings || !ringMiss.isEmpty()) m.put("ringMiss", new java.util.ArrayList<>(ringMiss));
+        if (!searchState.isEmpty()) m.put("routeSearch", searchState);
         var tr = pilot.trick();
         if (tr != null) m.put("trick", tr.name().toLowerCase(java.util.Locale.ROOT));
         m.put("figures", pilot.tricksDone());
@@ -547,6 +599,8 @@ public final class ElytraFlight {
         double dist = Math.hypot(dx, dz);
         if (!adris.altoclef.multiversion.entity.LivingEntityVer.isGliding(p)) {
             // Down within 30 blocks: good enough, the agent walks the rest. Further: fly again.
+            // A searched way counts from the target, not from the corner it was making for.
+            if (landAtTarget) dist = Math.hypot(finalX - p.getX(), finalZ - p.getZ());
             if (p.isOnGround() && dist < 30) {
                 finish("landed");
             } else if (p.isOnGround()) {
@@ -567,6 +621,9 @@ public final class ElytraFlight {
         if (rings && !rescue && route != null) {
             flyRings(client, p);
             return;
+        }
+        if (routeSearchOn() && !rescue && route == null && leader == null && !landAtTarget && searchRoute(client, p)) {
+            return; // circling while the way is searched
         }
         // A route: a waypoint passed within 20 blocks -- on to the next one, no landing.
         var r = route;
@@ -952,7 +1009,102 @@ public final class ElytraFlight {
     }
 
     /** Fire a rocket; false when it could not be used this tick (the pilot asks again). */
+    private static boolean routeSearchOn() {
+        if (!solverOn()) return false;
+        if (routeSearchOverride != null) return routeSearchOverride;
+        var mod = adris.altoclef.AltoClef.getInstance();
+        return mod != null && mod.getModSettings().isElytraRouteSearch();
+    }
+
+    /** The way to the target through the air: started on a worker at the first gliding tick, circled
+     *  out meanwhile; when it comes, its corners are flown as rings and it lands at the target. False
+     *  once there is nothing to wait for (found, none, or failed: then the plain solver flies). */
+    private static boolean searchRoute(MinecraftClient client, ClientPlayerEntity p) {
+        var s = search;
+        if (s == null) {
+            finalX = tx;
+            finalY = landingY(client);
+            finalZ = tz;
+            var world = client.world;
+            var from = new net.minecraft.util.math.Vec3d(p.getX(), p.getY(), p.getZ());
+            var to = new net.minecraft.util.math.Vec3d(finalX, finalY + 10, finalZ);
+            int minY = world.getBottomY(), maxY = (int) Math.max(p.getY(), finalY) + 80;
+            searchState = "searching";
+            search = java.util.concurrent.CompletableFuture.supplyAsync(
+                    () -> kaptainwutax.tungsten.elytra.AirRoute.find(world, from, to, minY, maxY), SEARCH);
+            return circle(client, p);
+        }
+        if (!s.isDone()) return circle(client, p);
+        java.util.List<net.minecraft.util.math.Vec3d> corners;
+        try {
+            corners = s.getNow(null);
+        } catch (Exception e) {
+            corners = null;
+        }
+        if (corners == null || corners.isEmpty()) {
+            searchState = "no way found";
+            landAtTarget = true; // do not search again; fly the plain way
+            return false;
+        }
+        double[][] pts = new double[corners.size()][];
+        for (int i = 0; i < pts.length; i++) {
+            var c = corners.get(i);
+            pts[i] = new double[]{c.x, c.y, c.z};
+        }
+        searchState = pts.length + " corners";
+        ringBest = Double.MAX_VALUE;
+        ringBestTick = ticks;
+        route = pts;
+        routeIdx = 0;
+        rings = true;
+        landAtTarget = true;
+        ringStart = new double[]{p.getX(), p.getY() + 0.3, p.getZ()};
+        lastX = p.getX();
+        lastY = p.getY() + 0.3;
+        lastZ = p.getZ();
+        return false;
+    }
+
+    /** Hold a wide turn at this height: a point 25 blocks off, 60 degrees right of the way it flies. */
+    private static boolean circle(MinecraftClient client, ClientPlayerEntity p) {
+        var v = p.getVelocity();
+        double a = Math.atan2(v.z, v.x) + Math.toRadians(60);
+        ElytraPilot.Out o = new ElytraPilot.Out();
+        o.mode = ElytraPilot.Mode.CRUISE;
+        o.yaw = p.getYaw();
+        o.pitch = p.getPitch();
+        steer(client, p, o, new net.minecraft.util.math.Vec3d(p.getX() + Math.cos(a) * 25, p.getY(), p.getZ() + Math.sin(a) * 25));
+        lastOut = o;
+        p.setYaw(o.yaw);
+        p.setPitch(o.pitch);
+        if (o.boost && !boost(client, p)) pilot.boostFailed();
+        return true;
+    }
+
+    private static final int ROCKET_MIN = kaptainwutax.tungsten.elytra.ElytraPhysics.ROCKET_MIN_TICKS;
+
+    // Runtime overrides (MCP flySettings), never saved: several game clients share one
+    // altoclef_settings.json, and @set saves all of a client's settings from its memory, so on a
+    // bench of three clients the flags flipped under each other (and the MCP token with them).
+    private static volatile Boolean solverOverride, routeSearchOverride;
+    private static volatile Double rocketCostOverride;
+
+    /** Set any of solver, routeSearch, rocketCost for this client only, not saved; null leaves one
+     *  as it is. Returns what is in force now. */
+    public static Map<String, Object> flySettings(Boolean solver, Boolean routeSearch, Double rocketCost) {
+        if (solver != null) solverOverride = solver;
+        if (routeSearch != null) routeSearchOverride = routeSearch;
+        if (rocketCost != null) rocketCostOverride = rocketCost;
+        Map<String, Object> m = new HashMap<>();
+        m.put("solver", solverOn());
+        m.put("routeSearch", routeSearchOn());
+        var p = MinecraftClient.getInstance().player;
+        if (p != null) m.put("rocketCost", rocketCost(p));
+        return m;
+    }
+
     private static boolean solverOn() {
+        if (solverOverride != null) return solverOverride;
         var mod = adris.altoclef.AltoClef.getInstance();
         return mod != null && mod.getModSettings().isElytraSolver();
     }
@@ -985,7 +1137,8 @@ public final class ElytraFlight {
     /** A rocket's price for the solver, in blocks of progress (see Settings.elytraRocketCost). */
     private static double rocketCost(ClientPlayerEntity p) {
         var mod = adris.altoclef.AltoClef.getInstance();
-        double set = mod == null ? -1 : mod.getModSettings().getElytraRocketCost();
+        Double over = rocketCostOverride;
+        double set = over != null ? over : mod == null ? -1 : mod.getModSettings().getElytraRocketCost();
         if (set >= 0) return set;
         return p.getAbilities().creativeMode ? 12 : 40;
     }
@@ -1033,7 +1186,17 @@ public final class ElytraFlight {
         o.yaw = p.getYaw() + Math.max(-25, Math.min(25,
                 net.minecraft.util.math.MathHelper.wrapDegrees(plan.yaw() - p.getYaw())));
         o.pitch = p.getPitch() + Math.max(-15, Math.min(15, plan.pitch() - p.getPitch()));
-        o.boost = fresh && plan.fire();
+        // Boxed in, every candidate hits: the one hitting latest is flown, a rocket preferred -- but
+        // not one every half second (120 went into a hall's corner).
+        o.boost = fresh && plan.fire() && (!plan.cornered() || ticks - lastRocketTick >= 40);
+        // Under 0.9 blocks a tick a glide stalls within seconds, whatever the score says: with
+        // waypoints 28 blocks apart a rocket's extra reach counted for nothing and it sank from
+        // 1.65 to 0.2 on the climb to a high gap (01.11, the maze).
+        var hv = p.getVelocity();
+        if (fresh && !o.boost && Math.hypot(hv.x, hv.z) < 0.9 && ticks - lastRocketTick >= ROCKET_MIN
+                && findItem(p, Items.FIREWORK_ROCKET) >= 0) {
+            o.boost = true;
+        }
     }
 
     private static boolean boost(MinecraftClient client, ClientPlayerEntity p) {

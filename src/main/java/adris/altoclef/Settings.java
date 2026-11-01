@@ -653,6 +653,17 @@ public class Settings implements IFailableConfigFile {
         return elytraSolver;
     }
 
+    /**
+     * With the solver: before flying to a point, search the way through the air on a coarse grid
+     * (tungsten AirRoute, on a worker while the glider circles) and fly its corners like rings.
+     * For halls, canyons, a way through a gap instead of over. Off: straight at cruise height.
+     */
+    private boolean elytraRouteSearch = false;
+
+    public boolean isElytraRouteSearch() {
+        return elytraRouteSearch;
+    }
+
     public double getElytraRocketCost() {
         return elytraRocketCost;
     }

@@ -253,6 +253,13 @@ public class McpServer {
                         + "hud (bool) false hides the HUD.",
                 schema(), a -> api.camera(a.has("perspective") ? a.get("perspective").getAsInt() : 0,
                         !a.has("hud") || a.get("hud").getAsBoolean()));
+        tool("flySettings", "Elytra steering for this client only, not saved to the shared settings file: "
+                        + "solver (bool), routeSearch (bool), rocketCost (number, below 0: by game mode). "
+                        + "Any left out stays as it is; returns what is in force.",
+                schema(), a -> api.flySettings(
+                        a.has("solver") ? a.get("solver").getAsBoolean() : null,
+                        a.has("routeSearch") ? a.get("routeSearch").getAsBoolean() : null,
+                        a.has("rocketCost") ? a.get("rocketCost").getAsDouble() : null));
         tool("flyRings",
                 "Elytra through rings: centres \"x,y,z;x,y,z;...\" in order, each crossed square to the way in; "
                 + "lands 60 blocks past the last. flyStatus: waypoint k/n, ringMiss (blocks off centre per ring).",

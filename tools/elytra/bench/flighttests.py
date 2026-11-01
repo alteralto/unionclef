@@ -76,6 +76,21 @@ def t_rings():
     return ok, {"status": st, "ringMiss": miss, "path": path}
 
 
+def t_maze():
+    """A glass hall cut by three walls with one 9x9 gap each, low, high, middle: the route search has to
+    find the way through the gaps and the glider fly it (the ceiling is too low to go over)."""
+    bench.maze()
+    mcp("flySettings", {"routeSearch": True})
+    try:
+        ok, info = fly_test(560, bench.MAZE_Z, 820, bench.MAZE_Z, seconds=120)
+    finally:
+        mcp("flySettings", {"routeSearch": False})
+    st = info["status"]
+    info["routeSearch"] = st.get("routeSearch")
+    info["ringMiss"] = st.get("ringMiss")
+    return ok and st.get("reason") != "blocked", info
+
+
 def t_tank_swim():
     """At the bottom of 16 blocks of water: swimToShore must come up and climb out on the one bank."""
     reset(70, -50, y=F)
@@ -113,7 +128,7 @@ def t_py4j_bridge():
 
 
 TESTS = [t_flat_hotbar, t_flat_backpack, t_long_500, t_gazebo_edge, t_under_canopy, t_low_forest,
-         t_rings, t_tank_swim, t_tank_hover, t_py4j_bridge, t_long_1000]
+         t_rings, t_tank_swim, t_tank_hover, t_py4j_bridge, t_long_1000, t_maze]
 
 
 def main():
@@ -121,7 +136,7 @@ def main():
     solver = "--solver" in sys.argv
     want = [a for a in sys.argv[1:] if not a.startswith("--")]
     bench.arena()
-    mcp("ExecuteCommand", {"cmd": f"@set elytraSolver {'true' if solver else 'false'}"})
+    mcp("flySettings", {"solver": solver})
     rows = []
     for t in TESTS:
         name = t.__name__[2:]
