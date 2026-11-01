@@ -71,6 +71,7 @@ public final class ElytraFlight {
     private static volatile java.util.List<kaptainwutax.tungsten.elytra.AirPlan.Tick> airPlan;
     private static volatile int airPlanT0;
     private static int planJobAt, planMisses, replans, firedAt, planMs, planMsMax;
+    private static volatile double planMsAvg; // how long a plan takes here, kept across flights
     // what the plans did, for the status: the last few events (a flight's story, not a log file)
     private static final java.util.Deque<String> planNotes = new java.util.concurrent.ConcurrentLinkedDeque<>();
     private static boolean planGaveUp;
@@ -1342,7 +1343,9 @@ public final class ElytraFlight {
         var vel = realVel(p);
         float yaw = p.getYaw(), pitch = p.getPitch();
         int left = rocketLeftGuess();
-        int lat = ap == null ? PLAN_LAT_FIRST : PLAN_LAT;
+        // As far ahead as a plan takes to come: 6 ticks on an idle machine; three game clients and a
+        // recording on one took 300-360 ms a plan, they came late and the glider was off them (01.11)
+        int lat = Math.max(ap == null ? PLAN_LAT_FIRST : PLAN_LAT, Math.min(20, (int) Math.ceil(planMsAvg / 50.0) + 2));
         for (int i = 1; i <= lat; i++) {
             if (ap != null) {
                 var a = planAt(ap, k + i);
@@ -1390,6 +1393,7 @@ public final class ElytraFlight {
             }
             planMs = (int) ((System.nanoTime() - t0) / 1_000_000);
             planMsMax = Math.max(planMsMax, planMs);
+            planMsAvg = planMsAvg * 0.7 + planMs * 0.3;
             return new PlanJob(r, cor, to);
         }, SEARCH);
     }

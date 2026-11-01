@@ -152,6 +152,11 @@ in sight from the take-off), ten flights each, a pass only when it lands inside 
 | physics plan, creative price (12) | 9 of 10 (one of them after falling back to the corners) | 5.0 | 11.0 |
 | physics plan, survival price (40) | 10 of 10 | 4.7 | 10.9 |
 
+Three bots from one take-off line, three game clients and a recording on one machine: planning took
+300-360 ms there (80 ms alone), the plans came after the 6 ticks they were made for and two of three
+bots failed. The lead is now as long as a plan takes here (6 to 20 ticks): 8 of 9 bots through over
+three takes, the first take slow while the JVMs warmed up.
+
 The plan buys the pass with a rocket or two more at the creative price: a rocket where the climb to
 the high gap needs it. The failures left: a glider pushed off the plan by the rocket's random 20..31
 ticks, near the edge of the low gap, where no new plan finds a way and it slides up the wall.
