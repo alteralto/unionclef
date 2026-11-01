@@ -121,7 +121,7 @@ def main():
     solver = "--solver" in sys.argv
     want = [a for a in sys.argv[1:] if not a.startswith("--")]
     bench.arena()
-    mcp("ExecuteCommand", {"cmd": f"@set elytraSolver {'true' if solver else 'false'}"})
+    mcp("flySettings", {"solver": solver})
     rows = []
     for t in TESTS:
         name = t.__name__[2:]

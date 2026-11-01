@@ -80,7 +80,7 @@ def main():
         mcp("ExecuteCommand", {"cmd": "@stop"}, nick=nick)
         mcp("flyStop", nick=nick)
         on = not (mode == "follow" and i == 2)  # follow: the third client keeps the PI pilot
-        mcp("ExecuteCommand", {"cmd": f"@set elytraSolver {'true' if on else 'false'}"}, nick=nick)
+        mcp("flySettings", {"solver": on}, nick=nick)
     starts = [(-6, Z), (0, Z + 6), (-6, Z + 12)]
     if mode == "race":
         starts = [(-30, Z), (0, Z), (-60, Z)]

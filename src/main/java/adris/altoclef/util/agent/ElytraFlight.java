@@ -952,7 +952,26 @@ public final class ElytraFlight {
     }
 
     /** Fire a rocket; false when it could not be used this tick (the pilot asks again). */
+    // Runtime overrides (MCP flySettings), never saved: several game clients share one
+    // altoclef_settings.json, and @set saves all of a client's settings from its memory, so on a
+    // bench of three clients the flags flipped under each other (the MCP token with them).
+    private static volatile Boolean solverOverride;
+    private static volatile Double rocketCostOverride;
+
+    /** Set solver and/or rocketCost for this client only, not saved; null leaves one as it is.
+     *  Returns what is in force now. */
+    public static Map<String, Object> flySettings(Boolean solver, Double rocketCost) {
+        if (solver != null) solverOverride = solver;
+        if (rocketCost != null) rocketCostOverride = rocketCost;
+        Map<String, Object> m = new HashMap<>();
+        m.put("solver", solverOn());
+        var p = MinecraftClient.getInstance().player;
+        if (p != null) m.put("rocketCost", rocketCost(p));
+        return m;
+    }
+
     private static boolean solverOn() {
+        if (solverOverride != null) return solverOverride;
         var mod = adris.altoclef.AltoClef.getInstance();
         return mod != null && mod.getModSettings().isElytraSolver();
     }
@@ -985,7 +1004,8 @@ public final class ElytraFlight {
     /** A rocket's price for the solver, in blocks of progress (see Settings.elytraRocketCost). */
     private static double rocketCost(ClientPlayerEntity p) {
         var mod = adris.altoclef.AltoClef.getInstance();
-        double set = mod == null ? -1 : mod.getModSettings().getElytraRocketCost();
+        Double over = rocketCostOverride;
+        double set = over != null ? over : mod == null ? -1 : mod.getModSettings().getElytraRocketCost();
         if (set >= 0) return set;
         return p.getAbilities().creativeMode ? 12 : 40;
     }
