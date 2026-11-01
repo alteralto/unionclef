@@ -170,10 +170,11 @@ rings, 1 to 18 of 30.
 
 - **Exploring what is out of sight.** The long maze (beyond the view distance from the take-off) is
   flown by finding out: along the outside, back to the door, through the gaps. That works some of the
-  time (on the morning of 01.11, one pass in five: 16 plans, 32 s, 13 rockets) and is the next thing to
-  make dependable. Two ways it fails: from over the roof at the far end the cell search does not find
-  the way back to the door within 150 000 cells (the open sky above is searched first; a plan then
-  took up to 4.5 s), and it gives up and lands outside.
+  time and is the next thing to make dependable. On the morning of 01.11 it went one pass in five: from
+  over the roof at the far end the cell search did not find the way back to the door within 150 000
+  cells (the open sky above was searched first). The cells are searched as weighted A* now (the
+  heuristic times 1.5): 6 of 10 through, 12-14 rockets, 27-37 s; the compact hall 8 of 10 with it
+  (9 before, within what ten flights tell apart). The rest still give up and land outside.
 - After the bench agent ran on a client and was stopped, flights on that client could not take off
   until the client was restarted. Not looked into yet.
 - **Landing on the solver** and figures (tricks) on it; the PI pilot still does both.

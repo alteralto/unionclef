@@ -27,6 +27,9 @@ public final class AirRoute {
     // Enough to find the way back to a hall's door after flying over its roof (40 000 was not: the open
     // sky above was searched first, 01.11). On a worker, a second at most.
     private static final int MAX_NODES = 150_000;
+    // Weighted A*: a way a little longer than the best, found in a fraction of the cells. Searched
+    // plainly, the way back to a hall's door from over its roof spent the 150 000 on the open sky.
+    private static final double H_WEIGHT = 1.5;
 
     private record Node(int x, int y, int z, double g, double f, Node parent) {
     }
@@ -62,7 +65,7 @@ public final class AirRoute {
         Map<Long, Double> best = new HashMap<>();
         Map<Long, Boolean> openCache = new HashMap<>();
         PriorityQueue<Node> q = new PriorityQueue<>((a, b) -> Double.compare(a.f(), b.f()));
-        q.add(new Node(sx, sy, sz, 0, h(sx, sy, sz, gx, gy, gz), null));
+        q.add(new Node(sx, sy, sz, 0, H_WEIGHT * h(sx, sy, sz, gx, gy, gz), null));
         best.put(key(sx, sy, sz), 0.0);
         Node found = null, closest = null;
         double closestH = Double.MAX_VALUE;
@@ -100,7 +103,7 @@ public final class AirRoute {
                         long k = key(x, y, z);
                         if (g < best.getOrDefault(k, Double.MAX_VALUE)) {
                             best.put(k, g);
-                            q.add(new Node(x, y, z, g, g + h(x, y, z, gx, gy, gz), n));
+                            q.add(new Node(x, y, z, g, g + H_WEIGHT * h(x, y, z, gx, gy, gz), n));
                         }
                     }
                 }
