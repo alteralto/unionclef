@@ -204,6 +204,67 @@ pulls drawn 20..31, the 6-tick replanning delay): four hall layouts (the bench's
 four walls, a zigzag), 20 flights each at both rocket prices: 155 of 160 through; the corners as
 rings, 1 to 18 of 30.
 
+## The landing: `LandingPlan`
+
+With the solver on, the last leg ends in a touchdown searched on the physics, not the pilot's flare.
+From 60 blocks out (or once the pilot is flaring or sinking), on a worker thread:
+
+- **The search** (`LandingPlan.plan`): A* over moves that hold one look for 4 ticks (7 headings, 6
+  pitches), turned no faster than the bot turns, flown through `ElytraPhysics`, no new rockets (one
+  still pulling is flown out). A move that meets a block across the way, or comes within 0.5 blocks of
+  one sideways, is out. The search ends on a move that touches the ground at the spot's height softly,
+  then slides to within 4 blocks of the spot.
+- **Soft**: while a glide sinks slower than 0.5 a tick the game keeps the fall distance at 1; faster, it
+  adds up, and over 3 it hurts. The search counts it from a sink of 0.4, for a margin, and takes at
+  most 2 at the touch. The slide: a tick more at the touch speed, then ground friction.
+- **The heuristic**, a lower bound of the ticks left: the way at top speed, and the energy (height +
+  v^2/0.16) above a touchdown's at the fastest a glide sheds it (1.34 a tick, a steep turning dive,
+  measured on the physics). Without the energy term every start high over the spot ran out of states
+  circling it.
+- **Flying it** (`ElytraFlight.flyLanding`): the plan's looks tick by tick, searched again from the
+  state predicted as far ahead as a search takes here, when the glider is 1.5 blocks off it (0.8 in
+  its last 20 ticks) or at its end. Before every tick the plan's next 12 looks are flown from where the
+  glider really is; into a block across the way, or down onto one above the plan's touchdown (a wall's
+  top: the wings close and the bot slides off and falls), the solver steers that tick, through the
+  plan a second on. No plan three times in a row: the pilot lands, as before. Each miss in a row
+  doubles the reach asked for (4, 8, 16): a soft landing farther off before none.
+
+Found on the bench (08.11), each from a flight log against the plan:
+
+- **The take-off's rocket.** It pulls 20 to 31 ticks; the plans assumed 25. On a 50 block hop the
+  landing is planned while it still pulls, and a plan flaring nose up where the rocket pulled a tick
+  longer lifted the bot 1.5 blocks, and it landed 20-30 off, two runs in three. A landing now takes
+  the rocket as pulling its longest while the client still sees it on the player, and as gone once it
+  does not: guessed long, the bot is lower and slower than the plan, it is off it, and short is soft.
+- **Past the plan's touchdown and still up** (the bot touches 2-3 ticks after the plan says), the
+  plan's last look, a flare, held at speed, lifted it 4 blocks. Past the end the nose stays a little down.
+- **A touch planned at a sink of 0.45** had the bot sink 0.59 its last 8 ticks and lose 2 health: the
+  margin above.
+- **The safety check handed over to the pilot** and the pilot flew into the wall twice in four runs
+  (13.7 health and a death); the new plan was asked from the plan's looks, so from right at the wall,
+  where every move hits it. The solver steers now, and the plan is asked from the look flown.
+
+`tools/elytra/bench/landtest.py`, in survival so a hard touchdown hurts, every flight filmed; the bot
+starts each leg on full health, from a clean strip, the target on flat ground (`--walls`: a stone wall
+8 high and 13 wide across the way in, 12 blocks short of the spot, and four oak posts 6 high round
+it, 4 blocks out). Off: where the bot stopped against the target, blocks.
+
+| leg | pilot: off | solver: off | health lost | rockets, pilot / solver | seconds, pilot / solver |
+|---|---|---|---|---|---|
+| 50 | 3.3-7.1, mean 5.6 | 3.5-13.0, mean 7.4 | none | 1 / 1 | 4.1 / 1.6 |
+| 150 | 14.9-18.8, mean 17.1 | 3.1-3.5, mean 3.3 | none | 1 / 1 | 5.6 / 4.9 |
+| 300 | 14.5-18.7, mean 16.7 | 3.4-4.9, mean 4.1 | none | 2 / 2, and 43 in one pilot flight still circling the spot when the bench stopped it at 90 s | 11 / 9.8 (pilot: two that landed) |
+| 150, walls | 0.9-2.5, mean 1.6 | 7.2-26.9, mean 15.0 | solver: 8.6 in one of 3 | 3 / 3.7 | 7.4 / 10.2 |
+| 300, walls | 2.6-18.4, mean 12.8 | 3.5-19.3, mean 10.5 | none | 2.7 / 2.7 | 11.7 / 12.4 |
+
+Three flights each. The same code over the walled course 8 more times, without video: none hurt, 5.4-28.6
+off. So on open ground the solver lands 3-5 blocks from the spot where the pilot lands 15-19, and
+neither has hurt the bot in 18 flights; on the 50 block hop it is no better than the pilot, the
+take-off's rocket still carrying it low and fast over the spot. Behind a wall it is worse than the
+pilot, and once in 14 flights it came down on the wall's top and fell, 8.6 health. Room under the feet
+over a wall made that worse, 4 hurt in 10 (the plans kept high and came down hard behind it), and is
+not in.
+
 ## Not done yet
 
 - **Exploring what is out of sight.** The long maze (beyond the view distance from the take-off) is
@@ -218,18 +279,21 @@ rings, 1 to 18 of 30.
   cause); the case itself has not come up again to check.
 - **Pursuit** keeps 15-18 blocks behind where 15 is asked (above); the leader on the plain pilot
   sometimes spends three times its usual rockets on the same route.
-- **Landing on the solver** and figures (tricks) on it; the PI pilot still does both.
+- **Landing behind obstacles.** On open ground the solver lands (above); behind a wall it misses by
+  more than the pilot, and once in 14 it came down on the wall's top. A short hop is no better than the
+  pilot's: the landing would have to start with the take-off. Figures (tricks) are still the pilot's.
 - Pursuers do not follow a leader through a tunnel: the goal point lies beyond the wall, so they go
   round and fall behind.
 
 ## Files
 
 - `tungsten/.../elytra/ElytraPhysics.java`, `ElytraSolver.java`, `AirRoute.java` (cells, corridor),
-  `AirPlan.java` (the flight in the corridor)
+  `AirPlan.java` (the flight in the corridor), `LandingPlan.java` (the touchdown)
 - `src/.../util/agent/ElytraFlight.java` (`steer`, `followSlot`, `startRings`), `FlightViz.java`,
   `FlightLog.java`, `FrameRecorder.java` (game-only video for the bench: `recordStart`/`recordStop`;
   ffmpeg named in `<game>/altoclef/recorder_ffmpeg.txt`)
-- `tools/elytra/bench/` -- the bench (README there); `skycourse.py`, `skycopy.py`, `followdiag.py`
+- `tools/elytra/bench/` -- the bench (README there); `skycourse.py`, `skycopy.py`, `followdiag.py`,
+  `landtest.py` (landings, solver against pilot)
 - `deploy/runner/uctest/scenarios_elytra.py` -- `elytra_rings`, `elytra_500`, `elytra_follow` as suite
   courses; `deploy/runner/elytra_local.py` + `uctest/local.py` run them on local clients and a local
   server (the suite's client image is not public): rings 6 of 6, 500 blocks 6 of 6, follow 3 of 9

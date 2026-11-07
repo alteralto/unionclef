@@ -38,7 +38,7 @@ public final class FlightLog {
     }
 
     /** A rocket fired by the player rides along with it while it pulls. */
-    private static boolean rocketOn(MinecraftClient c, ClientPlayerEntity p) {
+    static boolean rocketOn(MinecraftClient c, ClientPlayerEntity p) {
         for (var e : c.world.getEntities()) {
             if (e instanceof FireworkRocketEntity r && r.getOwner() == p && r.squaredDistanceTo(p) < 4) return true;
         }

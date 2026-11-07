@@ -81,6 +81,26 @@ public final class ElytraFlight {
     private static float holdYaw, holdPitch;
     private static final int PLAN_LAT = 6, PLAN_LAT_FIRST = 16, PLAN_PULL = 25, ROCKET_LEAD = 1, PLAN_SAFE = 12;
     private static final double PLAN_DEV = 1.5, PLAN_REACHED = 10;
+    // The landing on the solver (tungsten LandingPlan): searched when the approach begins, flown tick
+    // by tick, searched again from where the glider is when it is off by LAND_DEV. No landing to be
+    // had (LAND_MISSES searches in a row): the pilot lands, as before.
+    private static volatile java.util.concurrent.CompletableFuture<kaptainwutax.tungsten.elytra.LandingPlan.Plan> landJob;
+    private static java.util.List<kaptainwutax.tungsten.elytra.AirPlan.Tick> landPlan;
+    private static int landPlanT0, landJobAt, landMisses, landPlans, landMs;
+    private static volatile double landMsAvg;
+    private static boolean landGaveUp;
+    private static String landState = "";
+    // Off by LAND_DEV, or LAND_DEV_END in the plan's last LAND_END ticks: the touchdown is where a
+    // small miss shows -- a plan touching sinking 0.16 met the ground a block lower than the bot was,
+    // and it floated 10 blocks past the spot (08.11).
+    private static final double LAND_DEV = 1.5, LAND_DEV_END = 0.8, LAND_FROM = 60;
+    private static final int LAND_END = 20;
+    // Near the ground and the fall adding up: nose up, the plan's look or not.
+    private static final double LAND_GUARD_FALL = 1.5, LAND_GUARD_HEIGHT = 8;
+    private static kaptainwutax.tungsten.elytra.LandingPlan.Touchdown landTouch;
+    private static int landTouchAt;
+    private static double landVy;
+    private static final int LAND_MISSES = 3;
     private static final ElytraPilot pilot = new ElytraPilot();
     private static boolean pilotReady;
     private static volatile ElytraPilot.Out lastOut;
@@ -260,6 +280,12 @@ public final class ElytraFlight {
         planNotes.clear();
         firedAt = -1;
         planGaveUp = false;
+        landJob = null;
+        landPlan = null;
+        landMisses = landPlans = 0;
+        landGaveUp = false;
+        landTouch = null;
+        landState = "";
         reason = "";
         phase = Phase.EQUIP;
         FlightViz.newFlight();
@@ -430,6 +456,7 @@ public final class ElytraFlight {
         var sky = openSky;
         if (phase == Phase.FAILED && sky != null) m.put("openSky", sky.getX() + "," + sky.getY() + "," + sky.getZ());
         if (leader != null) m.put("leader", leader);
+        if (!landState.isEmpty()) m.put("landing", landState);
         m.put("target", String.format(java.util.Locale.ROOT, "%.0f,%.0f,%.0f", tx, ty, tz));
         var p = MinecraftClient.getInstance().player;
         if (p != null) {
@@ -674,6 +701,7 @@ public final class ElytraFlight {
             // course that comes back to its start "landed" at the first ring, 25 blocks out, 07.11).
             boolean ahead = route != null && (rings || routeIdx < route.length - 1);
             if (p.isOnGround() && dist < 30 && !ahead) {
+                noteTouch(p);
                 finish("landed");
             } else if (p.isOnGround()) {
                 takeoffTicks = 0;
@@ -719,12 +747,16 @@ public final class ElytraFlight {
         ElytraPilot.Out o = pilot.step(p.getX(), p.getY(), p.getZ(), v.x, v.y, v.z,
                 tx, landingY(client), tz, terrainAhead(client, p), top(client, p.getX(), p.getZ()),
                 runwayClear(client, p), obstacleAhead(client, p));
+        // The landing: from the approach on, a touchdown searched on the physics, when there is one.
+        boolean landing = landingDue(o, dist) && flyLanding(client, p, o);
         // En route only: from the pilot's descent on, the approach is its own (handed over at cruise
         // height it lands; handed over low and fast over the spot it circled a block over the
         // ground for half a minute, a rocket a second).
         boolean enRoute = o.mode == ElytraPilot.Mode.CRUISE || o.mode == ElytraPilot.Mode.CLIMB
                 || o.mode == ElytraPilot.Mode.AVOID;
-        if (solverOn() && !rescue && enRoute && dist > 70) {
+        if (landing) {
+            solverSteered = false;
+        } else if (solverOn() && !rescue && enRoute && dist > 70) {
             steer(client, p, o, goalAhead(client, p, dist));
         } else if (solverSteered) {
             solverSteered = false;
@@ -736,7 +768,8 @@ public final class ElytraFlight {
         // No progress for 6 s outside a landing (boxed in, a ceiling, a wall): give up rather than
         // burn rockets against it -- 36 went into a bunker roof once.
         boolean landingPhase = o.mode == ElytraPilot.Mode.FLARE || o.mode == ElytraPilot.Mode.SINK
-                || o.mode == ElytraPilot.Mode.FINAL || o.mode == ElytraPilot.Mode.TRICK; // figures circle on purpose
+                || o.mode == ElytraPilot.Mode.FINAL || o.mode == ElytraPilot.Mode.TRICK // figures circle on purpose
+                || landing; // a landing high over the spot circles its height away
         if (dist < bestDist - 3 || landingPhase) {
             bestDist = Math.min(bestDist, dist);
             bestTick = ticks;
@@ -1336,6 +1369,192 @@ public final class ElytraFlight {
         return true;
     }
 
+    /** The approach has begun: within LAND_FROM of the spot on the last leg, or over it. Not from the
+     *  pilot's descent alone: it began 200 blocks out once, and three searches from there ran out of
+     *  states (08.11). Not in a rescue, a pursuit, a ring course, or once no landing was to be had. */
+    private static boolean landingDue(ElytraPilot.Out o, double dist) {
+        if (!solverOn() || rescue || leader != null || rings || landGaveUp) return false;
+        var r = route;
+        if (r != null && routeIdx < r.length - 1) return false;
+        if (landPlan != null || landJob != null) return true;
+        return dist < LAND_FROM || o.mode == ElytraPilot.Mode.FLARE || o.mode == ElytraPilot.Mode.SINK;
+    }
+
+    /** Fly the landing plan this tick (true: the look in o is the plan's), asking for a new one when
+     *  off it or at its end. Till the first plan comes the look it was planned from is held. */
+    private static boolean flyLanding(MinecraftClient client, ClientPlayerEntity p, ElytraPilot.Out o) {
+        trackPos(p);
+        landVy = realVel(p).y;
+        var lj = landJob;
+        if (lj != null && lj.isDone() && ticks >= landJobAt) {
+            kaptainwutax.tungsten.elytra.LandingPlan.Plan r;
+            try {
+                r = lj.getNow(null);
+            } catch (Exception e) {
+                r = null;
+            }
+            landJob = null;
+            if (r != null && r.ok()) {
+                landPlan = r.ticks();
+                landPlanT0 = landJobAt;
+                landMisses = 0;
+                landPlans++;
+                var t = r.touch();
+                landTouch = t;
+                landTouchAt = landJobAt + r.ticks().size() - 1;
+                landState = String.format(java.util.Locale.ROOT, "plan %d: %d ticks, touch sinking %.2f, fall %.1f, stops %.1f off",
+                        landPlans, r.ticks().size() - 1, t.vel().y, t.fall(), Math.hypot(t.stop().x - tx, t.stop().z - tz));
+                planNote(ticks + " landing " + landState + " (" + r.expanded() + " states, " + landMs + " ms)");
+            } else {
+                landState = "no landing: " + (r == null ? "error" : r.why());
+                planNote(ticks + " " + landState + " (" + landMs + " ms)");
+                if (++landMisses >= LAND_MISSES) {
+                    landGaveUp = true;
+                    landPlan = null;
+                    landState += "; the pilot lands";
+                    pilot.resetForLanding(p.getYaw(), p.getPitch());
+                    return false;
+                }
+            }
+        }
+        var lp = landPlan;
+        if (lp == null) {
+            // The first plan starts from the state the held look leads to: hold it while it comes,
+            // unless holding it meets a block -- then the pilot flies and it is asked again.
+            if (landJob == null) {
+                holdYaw = p.getYaw();
+                holdPitch = p.getPitch();
+                requestLanding(client, p, null, 0);
+            }
+            // Near the ground a long held look always meets it: only the next half second counts here.
+            var held = kaptainwutax.tungsten.elytra.ElytraPhysics.predict(client.world,
+                    new net.minecraft.util.math.Vec3d(p.getX(), p.getY(), p.getZ()), realVel(p), holdYaw, holdPitch, 10, 0);
+            if (held.hit()) return false; // the pilot flies; the plan, from a little off, is searched again when it comes
+            o.yaw = holdYaw;
+            o.pitch = holdPitch;
+            o.boost = false;
+            return true;
+        }
+        int k = ticks - landPlanT0;
+        // Safety: the plan's next looks, flown from where the glider really is. Into a block across the
+        // way (off the plan, a wall it was to clear): the solver flies this tick, through the plan a
+        // second on (past the wall), and a new plan is asked for from the look flown now, not the
+        // plan's. Flown blind, a plan 3.4 blocks off took the bot into a wall 12 blocks short of the
+        // spot, 5.8 health; handed to the pilot, it flew into the wall twice in four runs, 13.7 health
+        // and a death; asked from the plan's looks, every move from the new start hit the wall (08.11).
+        if (landHits(client, p, lp, k)) {
+            planNote(ticks + " landing unsafe at " + k);
+            throughNext = planAt(lp, k + 20).pos();
+            steerTo(client, p, o, planAt(lp, k + 40).pos(), 0.4, 1.0);
+            throughNext = null;
+            if (landJob == null) requestLanding(client, p, null, 0);
+            return true;
+        }
+        var here = new net.minecraft.util.math.Vec3d(p.getX(), p.getY(), p.getZ());
+        double off = here.distanceTo(planAt(lp, k).pos());
+        boolean ending = k + 2 >= lp.size();
+        double dev = k + LAND_END >= lp.size() ? LAND_DEV_END : LAND_DEV;
+        if (landJob == null && (off > dev || ending)) {
+            planNote(ticks + (ending ? " end of the landing plan" : String.format(java.util.Locale.ROOT, " off the landing %.1f at %d", off, k)));
+            requestLanding(client, p, lp, k);
+        }
+        var a = planAt(lp, k + 1);
+        o.yaw = a.yaw();
+        o.pitch = a.pitch();
+        o.boost = false; // a landing sheds energy
+        // Past the touch and still up (it touches 2-3 ticks after the plan): the plan's last look,
+        // a flare, held at speed lifted the bot 4 blocks and it floated 20 past the spot (08.11).
+        // Nose a little down till the next plan comes: a block or two over the ground cannot hurt.
+        if (k + 1 >= lp.size()) o.pitch = Math.max(o.pitch, 5f);
+        // The plan said soft and the fall adds up anyway, a few blocks over the ground: pull the nose
+        // up (the speed turns into lift) and ask for a plan from here.
+        if (p.fallDistance > LAND_GUARD_FALL && realVel(p).y < -0.5
+                && p.getY() - top(client, p.getX(), p.getZ()) < LAND_GUARD_HEIGHT) {
+            o.pitch = Math.min(o.pitch, -20f);
+            if (landJob == null) {
+                planNote(String.format(java.util.Locale.ROOT, "%d landing sinking %.2f, fall %.1f: nose up", ticks, realVel(p).y, p.fallDistance));
+                requestLanding(client, p, lp, k);
+            }
+        }
+        return true;
+    }
+
+    /** Down from a landing plan: where and when against where and when the plan touched, for the bench. */
+    private static void noteTouch(ClientPlayerEntity p) {
+        var t = landTouch;
+        if (t == null || landGaveUp) return;
+        landTouch = null;
+        double h = Math.max(Math.hypot(t.vel().x, t.vel().z), 1e-6);
+        double dx = p.getX() - t.at().x, dz = p.getZ() - t.at().z;
+        planNote(String.format(java.util.Locale.ROOT, "%d touched %d ticks %s the plan, %.1f along and %.1f across its touch, sinking %.2f (plan %.2f)",
+                ticks, Math.abs(ticks - landTouchAt), ticks >= landTouchAt ? "after" : "before",
+                (dx * t.vel().x + dz * t.vel().z) / h, (dz * t.vel().x - dx * t.vel().z) / h, landVy, t.vel().y));
+    }
+
+    /** The landing plan's looks for the next PLAN_SAFE ticks, flown from where the glider is, meet a
+     *  block across the way, or come down on one above the plan's touchdown. The ground at the plan's
+     *  height is no danger: that is a touchdown, early or not. Anything higher is: the wings close on
+     *  a touch, and the bot that grazed the top of an 8 block wall slid off it and fell, 5 health (08.11). */
+    private static boolean landHits(MinecraftClient client, ClientPlayerEntity p,
+                                    java.util.List<kaptainwutax.tungsten.elytra.AirPlan.Tick> lp, int k) {
+        var t = landTouch;
+        double ground = t != null ? t.at().y : landingY(client);
+        var pos = new net.minecraft.util.math.Vec3d(p.getX(), p.getY(), p.getZ());
+        var vel = realVel(p);
+        int left = landRocketLeft(client, p);
+        for (int i = 1; i <= PLAN_SAFE; i++) {
+            var a = planAt(lp, k + i);
+            vel = kaptainwutax.tungsten.elytra.ElytraPhysics.step(vel, a.yaw(), a.pitch(), left > 0);
+            if (left > 0) left--;
+            var next = pos.add(vel);
+            if (kaptainwutax.tungsten.elytra.ElytraPhysics.blocked(client.world, pos, next)) {
+                return vel.y >= 0 || pos.y > ground + 1 || kaptainwutax.tungsten.elytra.ElytraPhysics.blocked(client.world, pos,
+                        new net.minecraft.util.math.Vec3d(next.x, pos.y, next.z));
+            }
+            pos = next;
+        }
+        return false;
+    }
+
+    /** Search a landing from the state the glider will be in when the search is done: the plan's looks
+     *  (or the look held) flown on for as long as a search takes here. */
+    private static void requestLanding(MinecraftClient client, ClientPlayerEntity p,
+                                       java.util.List<kaptainwutax.tungsten.elytra.AirPlan.Tick> lp, int k) {
+        var pos = new net.minecraft.util.math.Vec3d(p.getX(), p.getY(), p.getZ());
+        var vel = realVel(p);
+        float yaw = p.getYaw(), pitch = p.getPitch();
+        int left = landRocketLeft(client, p); // the take-off's rocket on a short hop: flown out, not ignored
+        int lat = Math.max(PLAN_LAT, Math.min(20, (int) Math.ceil(landMsAvg / 50.0) + 2));
+        for (int i = 1; i <= lat; i++) {
+            if (lp != null) {
+                var a = planAt(lp, k + i);
+                yaw = a.yaw();
+                pitch = a.pitch();
+            }
+            vel = kaptainwutax.tungsten.elytra.ElytraPhysics.step(vel, yaw, pitch, left > 0);
+            if (left > 0) left--;
+            var next = pos.add(vel);
+            if (kaptainwutax.tungsten.elytra.ElytraPhysics.blocked(client.world, pos, next)) break;
+            pos = next;
+        }
+        var start = new kaptainwutax.tungsten.elytra.AirPlan.State(pos, vel, yaw, pitch, left);
+        double fall = p.fallDistance;
+        var spot = new net.minecraft.util.math.Vec3d(tx, landingY(client), tz);
+        var world = client.world;
+        // Each miss in a row doubles the reach: a soft landing farther off before none at all. Low and
+        // slow over the spot every soft touch was 4-10 blocks off it, and the pilot landed 9 off (08.11).
+        var opts = new kaptainwutax.tungsten.elytra.LandingPlan.Options();
+        if (landPlans > 0) opts.reach *= 1 << Math.min(landMisses, 2); // not for a miss on the take-off
+        landJobAt = ticks + lat;
+        landJob = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            long t0 = System.nanoTime();
+            var r = kaptainwutax.tungsten.elytra.LandingPlan.plan(world, start, fall, spot, opts);
+            landMs = (int) ((System.nanoTime() - t0) / 1_000_000);
+            landMsAvg = landMsAvg * 0.7 + landMs * 0.3;
+            return r;
+        }, SEARCH);
+    }
+
     /** No plan to be had: the searched way's corners as rings, as before the plans. */
     private static boolean giveUpPlan(String why) {
         planNote(ticks + " gave up: " + why);
@@ -1383,6 +1602,19 @@ public final class ElytraFlight {
     }
 
     /** Ticks the last rocket still pulls, as far as the bot can tell: it pulls 20 to 31. */
+    /** Ticks the last rocket still pulls, for a landing: none once it is gone from the player, else
+     *  as long as a rocket can (31 ticks). Its life is 20 to 31, and a guess short by one tick is the
+     *  bad miss: the plan flares, nose up, where the rocket still pulls, and the bot climbed 1.5
+     *  blocks and landed 20-30 off on a 50 block hop, two runs in three (08.11). Guessed long, the
+     *  bot is lower and slower than the plan: it is off it, a new plan comes, and short is soft. */
+    private static int landRocketLeft(MinecraftClient client, ClientPlayerEntity p) {
+        int since = ticks - lastRocketTick;
+        if (since >= ROCKET_MAX || !FlightLog.rocketOn(client, p)) return 0;
+        return ROCKET_MAX - since;
+    }
+
+    private static final int ROCKET_MAX = kaptainwutax.tungsten.elytra.ElytraPhysics.ROCKET_MAX_TICKS;
+
     private static int rocketLeftGuess() {
         int since = ticks - lastRocketTick;
         return since < PLAN_PULL ? PLAN_PULL - since : 0;

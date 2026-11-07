@@ -31,6 +31,8 @@ python flighttests.py                 # all checks on the PI pilot
 python flighttests.py --solver        # ... on tungsten's ElytraSolver
 python flighttests.py rings long_1000 # some of them
 python abtest.py                      # pilot against solver, flight by flight
+python landtest.py 3                  # landings in survival: solver (LandingPlan) against pilot, 50/150/300 blocks
+python landtest.py 2 --walls          # ... with a wall across the way in and posts round the spot
 python physcheck.py                   # fly 300 blocks, check ElytraPhysics against the game per tick
 python showcase.py solo|race|chase    # the show course (needs 1 / 3 / 3 clients), filmed in third person
 python showcase.py follow             # pursuit: the bot on the solver, the third client on the pilot
