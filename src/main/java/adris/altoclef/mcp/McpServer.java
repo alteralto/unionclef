@@ -280,8 +280,11 @@ public class McpServer {
         tool("hoverTo",
                 "Creative only: fly to block x,z with creative flight (no elytra, no take-off run): straight "
                 + "up out of a pit, across over the ground, down onto the top surface there. Fails 'blocked' "
-                + "under a roof or against a wall. WASD by hand lets go. Poll hoverStatus.",
-                schema("x:int", "z:int"), a -> api.hoverTo(argInt(a, "x"), argInt(a, "z")));
+                + "under a roof or against a wall. WASD by hand lets go. Optional y (feet height): stop there in "
+                + "the air instead of landing and stay up, a place to build from. Poll hoverStatus.",
+                schema("x:int", "z:int"), a -> a.has("y")
+                        ? api.hoverAt(argInt(a, "x"), argInt(a, "y"), argInt(a, "z"))
+                        : api.hoverTo(argInt(a, "x"), argInt(a, "z")));
         tool("hoverStatus", "Creative flight (wingman or hoverTo): phase (flying/landing/done/failed), reason, "
                 + "gap to the slot or the point, target.", schema(),
                 a -> api.hoverStatus());
@@ -315,8 +318,16 @@ public class McpServer {
                 a -> api.swimStatus());
         tool("creativeGive",
                 "Creative mode only: put count of an item (e.g. 'firework_rocket', 'elytra') into free "
-                + "inventory slots, like taking it from the creative tab. ok=false with reason otherwise.",
-                schema("item:string", "count:int"), a -> api.creativeGive(argStr(a, "item"), argInt(a, "count")));
+                + "inventory slots, like taking it from the creative tab. Optional hotbar=true: into the hotbar, "
+                + "where building takes blocks from (a full hotbar's last stack moves to the inventory). "
+                + "ok=false with reason otherwise.",
+                schema("item:string", "count:int"), a -> a.has("hotbar") && a.get("hotbar").getAsBoolean()
+                        ? api.creativeGiveHotbar(argStr(a, "item"), argInt(a, "count"))
+                        : api.creativeGive(argStr(a, "item"), argInt(a, "count")));
+        tool("creativeClear",
+                "Creative mode only: take every stack of an item (e.g. 'red_concrete') out of the inventory, "
+                + "back to the creative tab: what a build took and no longer needs. cleared = how many.",
+                schema("item:string"), a -> api.creativeClear(argStr(a, "item")));
         tool("setFavoriteItem",
                 "A favourite item the bot keeps in hand on the ground (e.g. 'obsidian'): after a landing it "
                 + "replaces the rockets, an empty hand takes it, tidyInventory keeps it; '' clears. Optional "

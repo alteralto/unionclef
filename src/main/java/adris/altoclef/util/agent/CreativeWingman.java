@@ -18,7 +18,9 @@ import java.util.Map;
  *
  * Also flies to a point the same way (hoverTo): straight up out of a pit, across a few blocks
  * over the ground, straight down onto the top surface there. No take-off run and no open sky
- * needed, as an elytra wants: the way out of a hole the bot cannot walk out of.
+ * needed, as an elytra wants: the way out of a hole the bot cannot walk out of. Given a height it
+ * stops there in the air instead of landing and stays up (creative flight holds still): a place
+ * to build from where nothing stands to stand on.
  */
 public final class CreativeWingman {
     private enum Phase { IDLE, FLYING, LANDING, DONE, FAILED }
@@ -31,7 +33,9 @@ public final class CreativeWingman {
     private static volatile Vec3d slotSeen; // where it held station beside the leader (FlightViz)
     private static Vec3d lastLead; // the leader's position a tick ago: their motion
     private static volatile double[] point; // hoverTo: the block x, z to land on; null following
+    private static volatile double holdY = Double.NaN; // hoverTo with a height: stay up there
     private static double bestDist, bestY;  // progress to the point, for the watchdog
+    private static double holdBest;         // over the point: how near the height has come
     private static int bestTick;
 
     private static final int TIMEOUT_TICKS = 20 * 300;
@@ -52,6 +56,7 @@ public final class CreativeWingman {
         if (find(c, nick) == null) return fail("not in sight");
         leader = nick;
         point = null;
+        holdY = Double.NaN;
         slotSeen = null;
         phase = Phase.FLYING;
         FlightViz.newFlight();
@@ -63,12 +68,19 @@ public final class CreativeWingman {
 
     /** Creative-fly to block x, z and land on the top surface there; call on the client thread. */
     public static synchronized Map<String, Object> startTo(int x, int z) {
+        return startTo(x, z, Double.NaN);
+    }
+
+    /** As startTo, but with a height (feet y, not NaN) it stops there in the air and stays up. */
+    public static synchronized Map<String, Object> startTo(int x, int z, double y) {
         MinecraftClient c = MinecraftClient.getInstance();
         ClientPlayerEntity p = c.player;
         if (p == null || c.world == null) return fail("no world");
         if (!p.getAbilities().allowFlying) return fail("not creative");
         leader = null;
         point = new double[] {x + 0.5, z + 0.5};
+        holdY = y;
+        holdBest = Double.MAX_VALUE;
         phase = Phase.FLYING;
         FlightViz.newFlight();
         reason = "";
@@ -101,6 +113,7 @@ public final class CreativeWingman {
         if (leader != null) m.put("leader", leader);
         double[] pt = point;
         if (pt != null) m.put("target", (int) Math.floor(pt[0]) + "," + (int) Math.floor(pt[1]));
+        if (pt != null && !Double.isNaN(holdY)) m.put("holdY", holdY);
         m.put("gap", Math.round(gap * 10) / 10.0);
         return m;
     }
@@ -219,13 +232,34 @@ public final class CreativeWingman {
     }
 
     /** One tick of hoverTo: up to a few blocks over the highest ground of the way ahead first
-     *  (straight up when well below it: out of a pit), then across; over the point, land. */
+     *  (straight up when well below it: out of a pit), then across; over the point, land -- or,
+     *  given a height, up or down to it and stay there. */
     private static void toPoint(MinecraftClient c, ClientPlayerEntity p, double[] pt) {
         double px = p.getX(), py = p.getY(), pz = p.getZ();
         double dx = pt[0] - px, dz = pt[1] - pz, hd = Math.hypot(dx, dz);
+        double hold = holdY;
         gap = hd;
-        if (hd < 0.7) {
+        if (hd < 0.7 && Double.isNaN(hold)) {
             phase = Phase.LANDING;
+            return;
+        }
+        if (hd < 0.7) {
+            double dy = hold - py;
+            gap = Math.hypot(hd, dy);
+            if (Math.abs(dy) < 0.25) {
+                p.setVelocity(Vec3d.ZERO);
+                phase = Phase.DONE;
+                reason = "holding";
+                return;
+            }
+            p.setVelocity(new Vec3d(dx * 0.3, Math.max(-0.4, Math.min(0.4, dy * 0.3)), dz * 0.3));
+            if (Math.abs(dy) < holdBest - 0.2) {
+                holdBest = Math.abs(dy);
+                bestTick = ticks;
+            } else if (ticks - bestTick > STALL_TICKS) {
+                phase = Phase.FAILED;
+                reason = "blocked";
+            }
             return;
         }
         double ux = dx / hd, uz = dz / hd;
@@ -241,6 +275,8 @@ public final class CreativeWingman {
             if (g <= py + 2 || !clearAt(c, ax, py, az)) cruise = Math.max(cruise, g);
         }
         cruise += CLEARANCE;
+        // A height to stay at: kept over the way's ground on the way, taken in the last blocks.
+        if (!Double.isNaN(hold)) cruise = hd < 4 ? hold : Math.max(cruise, hold);
         if (roofed) cruise = py;
         Vec3d v;
         if (roofed) {

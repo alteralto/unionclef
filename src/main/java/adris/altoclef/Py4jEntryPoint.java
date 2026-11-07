@@ -5983,6 +5983,13 @@ public class Py4jEntryPoint {
                 Map.of("phase", "failed", "reason", "client thread timeout"));
     }
 
+    /** Creative only: fly to block x, z and stop with the feet at y, staying up in the air. */
+    public Map<String, Object> hoverAt(int x, int y, int z) {
+        adris.altoclef.util.agent.ElytraFlight.register();
+        return onClientThread(() -> adris.altoclef.util.agent.CreativeWingman.startTo(x, z, y),
+                Map.of("phase", "failed", "reason", "client thread timeout"));
+    }
+
     public Map<String, Object> hoverStatus() {
         return adris.altoclef.util.agent.CreativeWingman.status();
     }
@@ -6013,6 +6020,78 @@ public class Py4jEntryPoint {
             out.put("ok", given > 0);
             out.put("given", given);
             if (given == 0) out.put("reason", "inventory full");
+            return out;
+        }, Map.of("ok", false, "reason", "client thread timeout"));
+    }
+
+    /** Creative only: the item in the HOTBAR, where the build queue takes blocks from. Already
+     *  there: nothing. A free hotbar slot takes it; with the hotbar full, the last slot's stack
+     *  moves to a free inventory slot first (nothing is thrown or overwritten). */
+    public Map<String, Object> creativeGiveHotbar(String itemId, int count) {
+        return onClientThread(() -> {
+            Map<String, Object> out = new HashMap<>();
+            MinecraftClient client = MinecraftClient.getInstance();
+            var me = client.player;
+            if (me == null || client.interactionManager == null) { out.put("ok", false); out.put("reason", "not in game"); return out; }
+            if (!me.getAbilities().creativeMode) { out.put("ok", false); out.put("reason", "not creative"); return out; }
+            net.minecraft.item.Item item = itemById(itemId);
+            if (item == null) { out.put("ok", false); out.put("reason", "unknown item " + itemId); return out; }
+            var inv = me.getInventory();
+            int slot = -1;
+            for (int i = 0; i < 9 && slot < 0; i++) if (inv.getStack(i).isOf(item)) slot = i;
+            for (int i = 0; i < 9 && slot < 0; i++) if (inv.getStack(i).isEmpty()) slot = i;
+            // A slot this call filled before (the last colour of a build) is taken again: moving
+            // each colour out in turn filled the inventory in one ring course (07.11).
+            for (int i = 0; i < 9 && slot < 0; i++) {
+                if (HOTBAR_GIVEN.contains(inv.getStack(i).getItem())) slot = i;
+            }
+            if (slot < 0) {
+                int free = -1;
+                for (int i = 9; i < 36 && free < 0; i++) if (inv.getStack(i).isEmpty()) free = i;
+                if (free < 0) { out.put("ok", false); out.put("reason", "inventory full"); return out; }
+                slot = 8;
+                net.minecraft.item.ItemStack moved = inv.getStack(slot).copy();
+                inv.setStack(free, moved.copy());
+                client.interactionManager.clickCreativeStack(moved, free);
+                out.put("moved", net.minecraft.registry.Registries.ITEM.getId(moved.getItem()) + " to slot " + free);
+            }
+            net.minecraft.item.ItemStack stack = new net.minecraft.item.ItemStack(item,
+                    Math.max(1, Math.min(count, item.getMaxCount())));
+            inv.setStack(slot, stack.copy());
+            client.interactionManager.clickCreativeStack(stack, 36 + slot);
+            HOTBAR_GIVEN.add(item);
+            out.put("ok", true);
+            out.put("hotbar", slot);
+            return out;
+        }, Map.of("ok", false, "reason", "client thread timeout"));
+    }
+
+    /** Items creativeGiveHotbar put in the hotbar: their slots are the ones it may fill again. */
+    private static final java.util.Set<net.minecraft.item.Item> HOTBAR_GIVEN =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** Creative only: take every stack of an item out of the inventory, as dragging it back into
+     *  the creative tab does (what a build took from the tab and no longer needs). */
+    public Map<String, Object> creativeClear(String itemId) {
+        return onClientThread(() -> {
+            Map<String, Object> out = new HashMap<>();
+            MinecraftClient client = MinecraftClient.getInstance();
+            var me = client.player;
+            if (me == null || client.interactionManager == null) { out.put("ok", false); out.put("reason", "not in game"); return out; }
+            if (!me.getAbilities().creativeMode) { out.put("ok", false); out.put("reason", "not creative"); return out; }
+            net.minecraft.item.Item item = itemById(itemId);
+            if (item == null) { out.put("ok", false); out.put("reason", "unknown item " + itemId); return out; }
+            var inv = me.getInventory();
+            int cleared = 0;
+            for (int i = 0; i < 36; i++) {
+                if (!inv.getStack(i).isOf(item)) continue;
+                cleared += inv.getStack(i).getCount();
+                inv.setStack(i, net.minecraft.item.ItemStack.EMPTY);
+                client.interactionManager.clickCreativeStack(net.minecraft.item.ItemStack.EMPTY, i < 9 ? 36 + i : i);
+            }
+            HOTBAR_GIVEN.remove(item);
+            out.put("ok", true);
+            out.put("cleared", cleared);
             return out;
         }, Map.of("ok", false, "reason", "client thread timeout"));
     }
