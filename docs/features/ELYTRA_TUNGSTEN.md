@@ -106,6 +106,14 @@ blocks (35-68 before, up to 237 at worst), the bot 1-4 rockets over the leader; 
 both gates (median at most 15, at most three rockets over). In two runs the leader itself, on the
 plain pilot, spent 22 and 27 rockets on a route it usually flies on 6-9: not looked into yet.
 
+With two pursuers the count went wrong (their own rockets ride close to the leader too and were
+counted as its, 28 rockets to the leader's 6); now only a rocket nearer the leader than anyone else
+counts. And a pursuer low and fast by the leader when it set down had the pilot circle over the
+ground on a rocket a second: a landing after a pursuit fires none now. Since then: two pursuers, the
+solver one 9-11 rockets to the leader's 6-9, median gap 13.5-16.7; uctest `elytra_follow`, three runs,
+7-8 rockets to 6, median gap 15.1-18.4. Rockets are where they should be; the gap is a little over
+the 15 asked for.
+
 **A course that turns back.** Nine rings out along one lane and back along the next (the sky course
 below) failed three ways at once. The first ring, 25 blocks from the start, counted the flight as
 landed before the take-off (on the ground near the target: now an arrival only with no rings left).
@@ -208,8 +216,8 @@ rings, 1 to 18 of 30.
 - After the bench agent ran on a client and was stopped, flights on that client could not take off
   until the client was restarted. An elytra flight now stops a creative hover left on (the likely
   cause); the case itself has not come up again to check.
-- **Pursuit** passes its gates in half the runs (above); the leader on the plain pilot sometimes
-  spends three times its usual rockets on the same route.
+- **Pursuit** keeps 15-18 blocks behind where 15 is asked (above); the leader on the plain pilot
+  sometimes spends three times its usual rockets on the same route.
 - **Landing on the solver** and figures (tricks) on it; the PI pilot still does both.
 - Pursuers do not follow a leader through a tunnel: the goal point lies beyond the wall, so they go
   round and fall behind.
@@ -224,4 +232,4 @@ rings, 1 to 18 of 30.
 - `tools/elytra/bench/` -- the bench (README there); `skycourse.py`, `skycopy.py`, `followdiag.py`
 - `deploy/runner/uctest/scenarios_elytra.py` -- `elytra_rings`, `elytra_500`, `elytra_follow` as suite
   courses; `deploy/runner/elytra_local.py` + `uctest/local.py` run them on local clients and a local
-  server (the suite's client image is not public): rings 6 of 6, 500 blocks 6 of 6, follow 3 of 6
+  server (the suite's client image is not public): rings 6 of 6, 500 blocks 6 of 6, follow 3 of 9
