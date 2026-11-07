@@ -56,9 +56,10 @@ def _bearer():
     return _token
 
 
-def mcp(tool, args=None, nick=None, timeout=90):
-    """Call a mod tool on a client (the bot by default); the tool's JSON answer, or {"error": ...}."""
-    url = CLIENTS[nick or BOT]
+_checked = False
+
+
+def _post(url, tool, args, timeout):
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
                        "params": {"name": tool, "arguments": args or {}}}).encode("utf-8")
     req = urllib.request.Request(url, body, {"Content-Type": "application/json",
@@ -70,6 +71,30 @@ def mcp(tool, args=None, nick=None, timeout=90):
         return json.loads(text) if text.startswith(("{", "[")) else {"text": text}
     except Exception as e:  # a test reads a failed call as a failed step, not a crash
         return {"error": repr(e)[:200]}
+
+
+def _match_clients():
+    """Each client's MCP port by the name its player logs in with. A second client takes the next
+    free port, so the ports go in the order the clients came up, not the order they were started
+    in: with them taken as listed, a teleport went to one player and its flight to the other."""
+    global _checked
+    _checked = True
+    urls = sorted(set(CLIENTS.values()))
+    names = {}
+    for url in urls:
+        who = (_post(url, "getGameState", {}, 15).get("self") or {}).get("name")
+        if who:
+            names[who.lower()] = url
+    for nick in CLIENTS:
+        if nick.lower() in names:
+            CLIENTS[nick] = names[nick.lower()]
+
+
+def mcp(tool, args=None, nick=None, timeout=90):
+    """Call a mod tool on a client (the bot by default); the tool's JSON answer, or {"error": ...}."""
+    if not _checked:
+        _match_clients()
+    return _post(CLIENTS[nick or BOT], tool, args, timeout)
 
 
 def me(nick=None):
