@@ -1,6 +1,6 @@
 """Run the uctest elytra courses (uctest/scenarios_elytra.py) on clients and a server on this machine.
 
-    python elytra_local.py [elytra_rings,elytra_500,elytra_follow] [--repeat N]
+    python elytra_local.py [elytra_rings,elytra_500,elytra_follow] [--repeat N] [--record]
 
 run_suite.py drives the containers of deploy/compose.test.yml; this is the same course code (build,
 fresh_reset, run, judge, cleanup) for a local flat test server and local clients, through
@@ -48,7 +48,7 @@ def flat_again(rcon, half):
         rcon.cmd(f"fill {-half} {y} {-half} {half} {y} {half} minecraft:{block}")
 
 
-def run(cls, rcon, bot, victim, art_root):
+def run(cls, rcon, bot, victim, art_root, record=False):
     scn = cls()
     ctx = Ctx(bot, victim if scn.needs_victim else None, rcon, Artifacts(art_root, scn.id))
     print(f"\n--- {scn.id} ({scn.tier}, {scn.duration}s) ---", flush=True)
@@ -61,7 +61,16 @@ def run(cls, rcon, bot, victim, art_root):
         bot.fresh_reset(ctx.geo["bot_spawn"], scn.bot_kit, True)
         if scn.needs_victim:
             victim.fresh_reset(ctx.geo["victim_spawn"], scn.victim_kit, True)
-        crits = scn.run(ctx)
+        if record:  # the bot's own window, from behind it, no HUD: the mod's recorder
+            bot.py.call("camera", 1, False)
+            clip = bot.py.call("recordStart", f"uctest-{scn.id}-{time.strftime('%H%M%S')}", 30)
+            ctx.geo["clip"] = clip.get("file") if isinstance(clip, dict) else None
+        try:
+            crits = scn.run(ctx)
+        finally:
+            if record:
+                bot.py.try_call("recordStop")
+                bot.py.try_call("camera", 0, True)
     finally:
         scn.cleanup(ctx)
         for b in (bot, victim):
@@ -72,7 +81,7 @@ def run(cls, rcon, bot, victim, art_root):
     for c in rows:
         print(f"  {'PASS' if c['ok'] else 'FAIL'}{'' if c['gate'] else ' (info)'} {c['name']}: {c['detail']}")
     print(f"  => {'PASS' if passed else 'FAIL'}", flush=True)
-    ctx.art.write_json("verdict.json", {"passed": passed, "criteria": rows})
+    ctx.art.write_json("verdict.json", {"passed": passed, "criteria": rows, "clip": ctx.geo.get("clip")})
     return passed
 
 
@@ -80,6 +89,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("only", nargs="?", default=",".join(SCENARIOS))
     ap.add_argument("--repeat", type=int, default=1)
+    ap.add_argument("--record", action="store_true", help="film each course from the bot's client")
     a = ap.parse_args()
     rcon = LocalRcon()
     bot = actor(os.environ.get("UCTEST_BOT", "arcmlchikkk"), rcon)
@@ -88,7 +98,7 @@ def main():
                             "elytra-local-" + time.strftime("%Y%m%d-%H%M%S"))
     results = {}
     for sid in a.only.split(","):
-        results[sid] = [run(SCENARIOS[sid], rcon, bot, victim, art_root) for _ in range(a.repeat)]
+        results[sid] = [run(SCENARIOS[sid], rcon, bot, victim, art_root, a.record) for _ in range(a.repeat)]
     print("\n" + json.dumps({k: f"{sum(v)}/{len(v)}" for k, v in results.items()}))
 
 
