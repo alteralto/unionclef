@@ -95,6 +95,36 @@ on 01.11 morning, leader 6-7 rockets, solver 9 and 9 rockets, 38 and 49 blocks b
 pilot 20 and 9 rockets, 17 and 10 behind. Not solved: closeness against rockets is the choice to make
 (the solver prices a rocket at 12 blocks of progress and lets the leader go rather than pay).
 
+A trace of both flights every half second (`tools/elytra/bench/followdiag.py`, 07.11) showed where the
+gap came from: not the rockets but the height. The follow point lay 20 ticks ahead of the leader and the
+solver scores where a flight is after 40; every fast way overshot the point, and the best it found was
+to climb the speed away, 70 blocks over the leader. Now the point is where the slot will be at the end
+of the solver's look ahead, its height counts like its distance, and the leader's rockets set the
+budget (the client sees a firework ride with the leader: while the bot has fired fewer, a rocket is
+all but free; even, the usual price). uctest `elytra_follow` (below), six runs: median gap 12.8-18.0
+blocks (35-68 before, up to 237 at worst), the bot 1-4 rockets over the leader; three of the six pass
+both gates (median at most 15, at most three rockets over). In two runs the leader itself, on the
+plain pilot, spent 22 and 27 rockets on a route it usually flies on 6-9: not looked into yet.
+
+**A course that turns back.** Nine rings out along one lane and back along the next (the sky course
+below) failed three ways at once. The first ring, 25 blocks from the start, counted the flight as
+landed before the take-off (on the ground near the target: now an arrival only with no rings left).
+The ring after the turn, lying behind the one before it, was the point aimed for, so turning early cost
+less than the miss: the last ring out was passed 65 blocks off or circled till the watchdog gave up
+(now a ring behind the way in is not aimed for until this one is crossed). And the watchdog itself gave
+up in the turn, where the next ring first gets further away (it now waits while the ring is behind,
+ten seconds per ring at most). On a copy of the course on the test server: 0 of 3 before, 3 of 3
+through all nine after, 0.0-2.8 off centre, 7-8 rockets.
+
+**On a live server.** The same course built on a plot on a shared survival server (the
+plot's owner gave the strip): a one-block spine of white concrete running west from a floating
+platform at y 114, nine rings of coloured concrete on posts on it, 493 blocks placed by the bot itself
+in creative (`skycourse.py`: every cell checked air first, room round each ring, nothing broken; each
+block placed against one placed before, from a hover beside it, as nothing can be placed in mid-air).
+Flown three times with the recorder on: 3 of 3 through all nine rings, 0.1-2.7 off centre, 7-8
+rockets, 20 s a lap, landing back on the platform. There the chunks come over the network and other
+players fly about: not the flat world of the bench.
+
 Show course (11 rings, a glass tunnel, a slalom, a dive by the ground), solo: all 11 passed, at most
 3.2 blocks off centre, 8 rockets; three bots two seconds apart: 33 of 33, 7-10 rockets each.
 
@@ -176,7 +206,10 @@ rings, 1 to 18 of 30.
   heuristic times 1.5): 6 of 10 through, 12-14 rockets, 27-37 s; the compact hall 8 of 10 with it
   (9 before, within what ten flights tell apart). The rest still give up and land outside.
 - After the bench agent ran on a client and was stopped, flights on that client could not take off
-  until the client was restarted. Not looked into yet.
+  until the client was restarted. An elytra flight now stops a creative hover left on (the likely
+  cause); the case itself has not come up again to check.
+- **Pursuit** passes its gates in half the runs (above); the leader on the plain pilot sometimes
+  spends three times its usual rockets on the same route.
 - **Landing on the solver** and figures (tricks) on it; the PI pilot still does both.
 - Pursuers do not follow a leader through a tunnel: the goal point lies beyond the wall, so they go
   round and fall behind.
@@ -188,4 +221,7 @@ rings, 1 to 18 of 30.
 - `src/.../util/agent/ElytraFlight.java` (`steer`, `followSlot`, `startRings`), `FlightViz.java`,
   `FlightLog.java`, `FrameRecorder.java` (game-only video for the bench: `recordStart`/`recordStop`;
   ffmpeg named in `<game>/altoclef/recorder_ffmpeg.txt`)
-- `tools/elytra/bench/` -- the bench (README there)
+- `tools/elytra/bench/` -- the bench (README there); `skycourse.py`, `skycopy.py`, `followdiag.py`
+- `deploy/runner/uctest/scenarios_elytra.py` -- `elytra_rings`, `elytra_500`, `elytra_follow` as suite
+  courses; `deploy/runner/elytra_local.py` + `uctest/local.py` run them on local clients and a local
+  server (the suite's client image is not public): rings 6 of 6, 500 blocks 6 of 6, follow 3 of 6
