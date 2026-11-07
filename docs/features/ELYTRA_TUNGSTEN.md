@@ -282,6 +282,9 @@ not in.
 - **Landing behind obstacles.** On open ground the solver lands (above); behind a wall it misses by
   more than the pilot, and once in 14 it came down on the wall's top. A short hop is no better than the
   pilot's: the landing would have to start with the take-off. Figures (tricks) are still the pilot's.
+- **Rockets of other flight durations.** The physics, the plans and the landing assume flight duration 1
+  (a pull of 20-31 ticks); duration 2 and 3 pull 30-41 and 40-51. The bot would have to read the
+  rocket it holds; not done, the bench and the suite give it duration 1.
 - Pursuers do not follow a leader through a tunnel: the goal point lies beyond the wall, so they go
   round and fall behind.
 
