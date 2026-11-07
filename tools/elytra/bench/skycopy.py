@@ -59,12 +59,45 @@ def fly(nick):
     return out
 
 
+def race(gap=0.7, video=True):
+    """All clients through the course one after another, `gap` seconds apart, the bot last: filmed
+    from behind it, the two ahead in view at every ring."""
+    sx, sz = sky.START[0] + DX, sky.START[1] + DZ
+    order = [n for n in bench.NICKS if n != bench.BOT] + [bench.BOT]
+    pts = ";".join(f"{x + 0.5},{y + 0.5},{z + 0.5}" for x, y, z, _ in rings())
+    for i, nick in enumerate(order):
+        mcp("flyStop", nick=nick)
+        bench.reset(sx + 4 * i, sz + (2 if i % 2 else -2) * (i > 0), nick=nick, y=PLATFORM_Y + 1, yaw=90)
+        mcp("flySettings", {"solver": True}, nick=nick)
+    if video:
+        mcp("camera", {"perspective": 1, "hud": False})
+        mcp("recordStart", {"name": "skycopy-race", "fps": 30})
+    for nick in order:
+        mcp("flyRings", {"points": pts}, nick=nick)
+        time.sleep(gap)
+    sts = {}
+    t0 = time.time()
+    while time.time() - t0 < 120:
+        sts = {n: mcp("flyStatus", nick=n) for n in order}
+        if all(st.get("phase") in ("done", "failed", "idle") for st in sts.values()):
+            break
+        time.sleep(1)
+    if video:
+        time.sleep(2)
+        mcp("recordStop")
+        mcp("camera", {"perspective": 0, "hud": True})
+    for n, st in sts.items():
+        print(n, json.dumps({k: st.get(k) for k in ("phase", "reason", "ringMiss", "rocketsUsed")}), flush=True)
+
+
 if __name__ == "__main__":
     what = sys.argv[1] if len(sys.argv) > 1 else "build"
     if what == "build":
         build()
     elif what == "clear":
         clear()
+    elif what == "race":
+        race(float(sys.argv[2]) if len(sys.argv) > 2 else 0.7)
     elif what == "fly":
         n = int(sys.argv[2]) if len(sys.argv) > 2 else 1
         nick = sys.argv[3] if len(sys.argv) > 3 else bench.BOT

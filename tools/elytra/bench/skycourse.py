@@ -187,6 +187,11 @@ def fly(video=False, name="skycourse"):
     """From the start on the platform, through the rings in order, landing back on the platform."""
     pts = [(x, cy, cz) for x, cy, cz, _ in RINGS]
     mcp("flyStop", nick=BOT)
+    # Over the rings (their tops are 132 at most), to just east of the start, then down onto it: the
+    # take-off goes the way the bot faces and ring 1 is 25 blocks on, so it has to stand facing the
+    # course; and low over the platform the way in ran into ring 1's post.
+    mcp("hoverTo", {"x": START[0] + 6, "y": TOP + 22, "z": START[1]}, nick=BOT)
+    wait("hoverStatus", lambda s: s.get("phase") in ("done", "failed"), 90)
     mcp("hoverTo", {"x": START[0], "z": START[1]}, nick=BOT)
     wait("hoverStatus", lambda s: s.get("phase") in ("done", "failed"), 60)
     mcp("creativeGive", {"item": "firework_rocket", "count": 64}, nick=BOT)

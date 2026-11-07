@@ -267,12 +267,16 @@ public final class CreativeWingman {
         // bumps into it -- out sideways at this height first, towards the point, till the sky opens.
         boolean roofed = ground(c, px, pz) > py + 2 && solidOver(c, px, py, pz);
         double cruise = ground(c, px, pz);
+        // Under a roof only to a point that is under it too: a point whose top is well over the bot
+        // is on whatever looks like a roof from below. Coming in low to a floating platform, it went
+        // under it and landed on the ground below the point, a roof over the take-off (07.11).
+        boolean pointUnder = ground(c, pt[0], pt[1]) <= py + 2;
         for (int i = 1; i <= LOOK_AHEAD; i++) {
             double s = Math.min(i, hd);
             double ax = px + ux * s, az = pz + uz * s;
             double g = ground(c, ax, az);
             // A roof ahead with room under it is flown under; a wall or a hill is climbed over.
-            if (g <= py + 2 || !clearAt(c, ax, py, az)) cruise = Math.max(cruise, g);
+            if (g <= py + 2 || !clearAt(c, ax, py, az) || !pointUnder) cruise = Math.max(cruise, g);
         }
         cruise += CLEARANCE;
         // A height to stay at: kept over the way's ground on the way, taken in the last blocks.
