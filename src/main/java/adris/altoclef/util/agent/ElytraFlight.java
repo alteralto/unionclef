@@ -101,6 +101,7 @@ public final class ElytraFlight {
     // The leader's rockets seen this flight: a firework spawned on the leader, by entity id.
     private static final java.util.Set<Integer> leaderRocketIds = new java.util.HashSet<>();
     private static int leaderRockets;
+    private static boolean landingAfterFollow; // the leader set down: this flight is the landing
     private static boolean leaderSeen;
     private static int leaderDownTicks;
     private static double slotSide;           // which side of the leader's track this pursuer keeps
@@ -173,6 +174,7 @@ public final class ElytraFlight {
         leaderSeen = false;
         leaderRocketIds.clear();
         leaderRockets = 0;
+        landingAfterFollow = false;
         leaderDownTicks = 0;
         leaderStillTicks = 0;
         stillX = lead.getX();
@@ -229,6 +231,7 @@ public final class ElytraFlight {
         lowLevel = low;
         tricksWanted = Math.max(0, Math.min(tricks, 8));
         rescue = false;
+        landingAfterFollow = false;
         leader = null;
         tx = x;
         ty = y;
@@ -749,6 +752,9 @@ public final class ElytraFlight {
             fail("blocked");
             return;
         }
+        // Down after a pursuit: a landing sheds energy, a rocket adds it -- none unless the ground is
+        // right there.
+        if (o.boost && landingAfterFollow && p.getY() - top(client, p.getX(), p.getZ()) > 3) o.boost = false;
         if (o.boost && !rescue && !boost(client, p)) pilot.boostFailed(); // a rescue glides, no rockets
         if (o.arrived) finish(rescue ? "glided down" : "arrived");
     }
@@ -910,6 +916,12 @@ public final class ElytraFlight {
             double h = Math.max(Math.hypot(lvx, lvz), 1e-6);
             tx = lx - lvz / h * 4;
             tz = lz + lvx / h * 4;
+            // A pursuer low and fast by the leader when the leader sets down had the pilot circle a
+            // block over the ground on a rocket a second (watched on 07.11): this flight is a landing
+            // now, and a landing gets no rockets (see the end of fly). Moving the spot on along the
+            // track to where a plane-like approach fits put the pursuers down 90-180 blocks from the
+            // leader instead: not flying together.
+            landingAfterFollow = true;
             ty = top(client, tx, tz);
             leader = null;
             pilot.resetForLanding(p.getYaw(), p.getPitch());
@@ -1556,12 +1568,19 @@ public final class ElytraFlight {
         return slotSmooth;
     }
 
-    /** A firework rocket next to the leader that was not there before is one the leader fired: the
-     *  client sees the rocket entity ride along with whoever used it. */
+    /** A firework rocket on the leader that was not there before is one the leader fired: the client
+     *  sees a rocket used in flight ride along at its user's position. Only one nearer the leader than
+     *  to anyone else counts: with two pursuers flying close, theirs were counted as the leader's,
+     *  the debt never ran out, and one pursuer burned 28 rockets to the leader's 6 (07.11). */
     private static void countLeaderRockets(MinecraftClient client, net.minecraft.entity.player.PlayerEntity lead) {
         for (var r : client.world.getEntitiesByClass(net.minecraft.entity.projectile.FireworkRocketEntity.class,
-                lead.getBoundingBox().expand(3), e -> true)) {
-            if (leaderRocketIds.add(r.getId())) leaderRockets++;
+                lead.getBoundingBox().expand(1.5), e -> true)) {
+            double d = r.squaredDistanceTo(lead);
+            boolean theirs = d < 1.5 * 1.5;
+            for (var other : client.world.getPlayers()) {
+                if (other != lead && r.squaredDistanceTo(other) < d) theirs = false;
+            }
+            if (theirs && leaderRocketIds.add(r.getId())) leaderRockets++;
         }
     }
 
