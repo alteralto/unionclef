@@ -261,7 +261,8 @@ Three flights each. The same code over the walled course 8 more times, without v
 off. So on open ground the solver lands 3-5 blocks from the spot where the pilot lands 15-19, and
 neither has hurt the bot in 18 flights; on the 50 block hop it is no better than the pilot, the
 take-off's rocket still carrying it low and fast over the spot. Behind a wall it is worse than the
-pilot, and once in 14 flights it came down on the wall's top and fell, 8.6 health. Room under the feet
+pilot, and once in 14 flights it flew into the wall's top edge, a block low (1.34 to 0.24 blocks a tick,
+8.6 health: the game's kinetic damage, (speed lost x 10) - 3). Room under the feet
 over a wall made that worse, 4 hurt in 10 (the plans kept high and came down hard behind it), and is
 not in.
 
@@ -280,7 +281,7 @@ not in.
 - **Pursuit** keeps 15-18 blocks behind where 15 is asked (above); the leader on the plain pilot
   sometimes spends three times its usual rockets on the same route.
 - **Landing behind obstacles.** On open ground the solver lands (above); behind a wall it misses by
-  more than the pilot, and once in 14 it came down on the wall's top. A short hop is no better than the
+  more than the pilot, and once in 14 it flew into the wall's top edge. A short hop is no better than the
   pilot's: the landing would have to start with the take-off. Figures (tricks) are still the pilot's.
 - **Rockets of other flight durations.** The physics, the plans and the landing assume flight duration 1
   (a pull of 20-31 ticks); duration 2 and 3 pull 30-41 and 40-51. The bot would have to read the
