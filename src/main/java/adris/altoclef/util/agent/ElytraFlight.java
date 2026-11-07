@@ -54,7 +54,7 @@ public final class ElytraFlight {
     private static volatile String searchState = "";
     private static boolean landAtTarget;      // rings from a search: land at the target, not 60 on
     private static double ringBest;           // closest to the current ring so far, and when
-    private static int ringBestTick, researches;
+    private static int ringBestTick, researches, ringTurnTicks;
     private static double finalX, finalY, finalZ;
     private static final java.util.concurrent.ExecutorService SEARCH = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "elytra-route");
@@ -98,6 +98,9 @@ public final class ElytraFlight {
     // client does not get other players' velocity, only where they are.
     private static volatile String leader;
     private static double lastLx, lastLy, lastLz, lvx, lvy, lvz;
+    // The leader's rockets seen this flight: a firework spawned on the leader, by entity id.
+    private static final java.util.Set<Integer> leaderRocketIds = new java.util.HashSet<>();
+    private static int leaderRockets;
     private static boolean leaderSeen;
     private static int leaderDownTicks;
     private static double slotSide;           // which side of the leader's track this pursuer keeps
@@ -107,6 +110,9 @@ public final class ElytraFlight {
     private static double stillX, stillY, stillZ;
     private static int leaderStillTicks;
     private static final int LEADER_STILL_LAND = 300; // 15 s
+    /** Pursuit: within this many blocks of the leader the pilot keeps formation, beyond it the solver
+     *  catches up, paying less for a rocket the further behind (see the pursuit in fly). */
+    private static final double FORMATION = 14;
     private static net.minecraft.util.math.BlockPos openSky; // where to walk for a take-off
     // Progress watchdog: the best distance to the target and when it last improved.
     private static double bestDist;
@@ -165,6 +171,8 @@ public final class ElytraFlight {
         slotSide = 0;
         slotSmooth = null;
         leaderSeen = false;
+        leaderRocketIds.clear();
+        leaderRockets = 0;
         leaderDownTicks = 0;
         leaderStillTicks = 0;
         stillX = lead.getX();
@@ -268,6 +276,7 @@ public final class ElytraFlight {
         route = centres;
         routeIdx = 0;
         rings = true;
+        ringTurnTicks = 0;
         ringBest = Double.MAX_VALUE;
         ringBestTick = Integer.MAX_VALUE; // set on the first gliding tick
         return status();
@@ -314,11 +323,16 @@ public final class ElytraFlight {
             c = r[routeIdx];
             ringBest = Double.MAX_VALUE;
             ringBestTick = ticks;
+            ringTurnTicks = 0;
         }
         // No nearer to the ring for 5 s: boxed in (once it burned 120 rockets in the top corner of a
         // hall). A searched way is searched again from here, twice; then, or for rings, it gives up.
         double dRing = Math.sqrt((px - c[0]) * (px - c[0]) + (py - c[1]) * (py - c[1]) + (pz - c[2]) * (pz - c[2]));
-        if (dRing < ringBest - 1 || ringBestTick > ticks) {
+        // A ring behind the way it flies is a turn under way, not a box: a U-turn to the next ring
+        // goes away from it first ("blocked" in the turn at the far end of a course, 07.11). Ten
+        // seconds of that per ring at most, so circling for ever still ends.
+        boolean turning = (px - ox) * (c[0] - px) + (pz - oz) * (c[2] - pz) < 0 && ringTurnTicks++ < 200;
+        if (dRing < ringBest - 1 || ringBestTick > ticks || turning) {
             ringBest = dRing;
             ringBestTick = ticks;
         } else if (ticks - ringBestTick > 100) {
@@ -348,8 +362,15 @@ public final class ElytraFlight {
         o.mode = ElytraPilot.Mode.TRICK;
         o.yaw = p.getYaw();
         o.pitch = p.getPitch();
-        // On towards the ring after this one (or straight on past the last), passing this one's centre.
-        double[] nxt = routeIdx + 1 < r.length ? r[routeIdx + 1] : new double[]{c[0] + nx * 40, c[1], c[2] + nz * 40};
+        // On towards the ring after this one, passing this one's centre -- if that ring lies on past
+        // this one along the way in. One behind it (a course that turns back) is not a point to head
+        // for yet: turning for it early saved more way than the miss cost, and the ring before the
+        // turn was passed 65 blocks off or circled till the watchdog gave up (07.11). Then, as after
+        // the last ring, straight on through this one first.
+        double[] nxt = routeIdx + 1 < r.length ? r[routeIdx + 1] : null;
+        if (nxt == null || (nxt[0] - c[0]) * nx + (nxt[1] - c[1]) * ny + (nxt[2] - c[2]) * nz <= 0) {
+            nxt = new double[]{c[0] + nx * 40, c[1], c[2] + nz * 40};
+        }
         throughNext = new net.minecraft.util.math.Vec3d(c[0], c[1], c[2]);
         steerTo(client, p, o, new net.minecraft.util.math.Vec3d(nxt[0], nxt[1], nxt[2]), 0.3, 0.6);
         throughNext = null;
@@ -389,6 +410,7 @@ public final class ElytraFlight {
         m.put("phase", phase.name().toLowerCase(java.util.Locale.ROOT));
         m.put("reason", reason);
         m.put("rocketsUsed", rocketsUsed);
+        if (leader != null) m.put("leaderRockets", leaderRockets);
         if (lowLevel) m.put("low", true);
         var r = route;
         if (r != null) m.put("waypoint", (routeIdx + 1) + "/" + r.length);
@@ -645,7 +667,10 @@ public final class ElytraFlight {
             // Down within 30 blocks: good enough, the agent walks the rest. Further: fly again.
             // A searched way counts from the target, not from the corner it was making for.
             if (landAtTarget) dist = Math.hypot(finalX - p.getX(), finalZ - p.getZ());
-            if (p.isOnGround() && dist < 30) {
+            // Rings or waypoints still ahead are not an arrival, however near the target (a ring
+            // course that comes back to its start "landed" at the first ring, 25 blocks out, 07.11).
+            boolean ahead = route != null && (rings || routeIdx < route.length - 1);
+            if (p.isOnGround() && dist < 30 && !ahead) {
                 finish("landed");
             } else if (p.isOnGround()) {
                 takeoffTicks = 0;
@@ -893,11 +918,24 @@ public final class ElytraFlight {
         ElytraPilot.Out o = pilot.stepFollow(p.getX(), p.getY(), p.getZ(), v.x, v.y, v.z, lx, ly, lz, lvx, lvy, lvz,
                 terrainAhead(client, p), top(client, p.getX(), p.getZ()), obstacleAhead(client, p));
         double gapNow = Math.hypot(Math.hypot(lx - p.getX(), lz - p.getZ()), ly - p.getY());
-        if (solverOn() && gapNow > 14) {
-            steer(client, p, o, followSlot(client, p, lx, ly, lz));
+        countLeaderRockets(client, lead);
+        // Flying with someone is spending what they spend: a rocket is energy, and the leader's
+        // rockets are what keeps it ahead. Priced as on a trip of its own the solver let the leader
+        // go (38-49 blocks behind on 9 rockets against the leader's 6-7, 01.11), and a price that
+        // fell with the gap alone did not bring it back (36-60 behind, 07.11). So the leader's
+        // rockets set the budget: while the bot has fired fewer, a rocket is all but free and the
+        // solver puts it where it gains the most; even with the leader, it pays the trip's price,
+        // less the further behind (two over the leader at most); the pilot in formation fires no
+        // more than one over the leader.
+        int owed = leaderRockets - rocketsUsed;
+        if (solverOn() && gapNow > FORMATION) {
+            double scale = owed > 0 ? 0.1 : -owed < 2 ? Math.min(1, FORMATION / gapNow) : 1;
+            // The slot's height is part of the slot: a block off it costs a block of the way.
+            steerTo(client, p, o, followSlot(client, p, lx, ly, lz), 1.0, 1.5, scale);
         } else if (solverSteered) {
             solverSteered = false;
         }
+        if (o.boost && !solverSteered && solverOn() && owed < 0) o.boost = false;
         lastOut = o;
         p.setYaw(o.yaw);
         p.setPitch(o.pitch);
@@ -1505,13 +1543,26 @@ public final class ElytraFlight {
                 side += (across != 0 ? Math.signum(across) : slotSide) * Math.min(6, (10 - d) * 0.6);
             }
         }
-        double gx = lx + lvx * 20 - lvx / sp * 6 + px * side;
-        double gy = ly + lvy * 20 - lvy / sp * 6;
-        double gz = lz + lvz * 20 - lvz / sp * 6 + pz * side;
+        // Where the slot will be when the solver's look ahead ends: it scores where a flight is
+        // after HORIZON ticks, and against a slot only 20 ticks ahead every fast way overshot it,
+        // so the best it found was to climb the speed away -- 70 blocks over the leader (07.11).
+        int h = kaptainwutax.tungsten.elytra.ElytraSolver.HORIZON;
+        double gx = lx + lvx * h - lvx / sp * 6 + px * side;
+        double gy = ly + lvy * h - lvy / sp * 6;
+        double gz = lz + lvz * h - lvz / sp * 6 + pz * side;
         var raw = new net.minecraft.util.math.Vec3d(gx, gy, gz);
         var s = slotSmooth;
         slotSmooth = s == null || s.squaredDistanceTo(raw) > 400 ? raw : s.add(raw.subtract(s).multiply(0.25));
         return slotSmooth;
+    }
+
+    /** A firework rocket next to the leader that was not there before is one the leader fired: the
+     *  client sees the rocket entity ride along with whoever used it. */
+    private static void countLeaderRockets(MinecraftClient client, net.minecraft.entity.player.PlayerEntity lead) {
+        for (var r : client.world.getEntitiesByClass(net.minecraft.entity.projectile.FireworkRocketEntity.class,
+                lead.getBoundingBox().expand(3), e -> true)) {
+            if (leaderRocketIds.add(r.getId())) leaderRockets++;
+        }
     }
 
     /** A rocket's price for the solver, in blocks of progress (see Settings.elytraRocketCost). */
@@ -1541,11 +1592,18 @@ public final class ElytraFlight {
 
     private static void steerTo(MinecraftClient client, ClientPlayerEntity p, ElytraPilot.Out o,
                                 net.minecraft.util.math.Vec3d goal, double heightWeight, double clearance) {
+        steerTo(client, p, o, goal, heightWeight, clearance, 1);
+    }
+
+    /** rocketScale: the share of the usual rocket price this flight pays (pursuit, behind). */
+    private static void steerTo(MinecraftClient client, ClientPlayerEntity p, ElytraPilot.Out o,
+                                net.minecraft.util.math.Vec3d goal, double heightWeight, double clearance,
+                                double rocketScale) {
         boolean fresh = false;
         if (plan == null || ticks - planTick >= 2) {
             var g = new kaptainwutax.tungsten.elytra.ElytraSolver.Goal();
             g.point = goal;
-            g.rocketCost = rocketCost(p);
+            g.rocketCost = rocketCost(p) * rocketScale;
             g.heightWeight = heightWeight;
             g.clearance = clearance;
             g.through = throughNext;
