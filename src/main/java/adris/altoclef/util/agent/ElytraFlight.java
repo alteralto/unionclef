@@ -1504,11 +1504,12 @@ public final class ElytraFlight {
         int left = landRocketLeft(client, p);
         for (int i = 1; i <= PLAN_SAFE; i++) {
             var a = planAt(lp, k + i);
-            vel = kaptainwutax.tungsten.elytra.ElytraPhysics.step(vel, a.yaw(), a.pitch(), left > 0);
+            var st = kaptainwutax.tungsten.elytra.ElytraPhysics.tick(vel, a.yaw(), a.pitch(), left > 0);
+            vel = st.motion();
             if (left > 0) left--;
-            var next = pos.add(vel);
+            var next = pos.add(st.move());
             if (kaptainwutax.tungsten.elytra.ElytraPhysics.blocked(client.world, pos, next)) {
-                return vel.y >= 0 || pos.y > ground + 1 || kaptainwutax.tungsten.elytra.ElytraPhysics.blocked(client.world, pos,
+                return st.move().y >= 0 || pos.y > ground + 1 || kaptainwutax.tungsten.elytra.ElytraPhysics.blocked(client.world, pos,
                         new net.minecraft.util.math.Vec3d(next.x, pos.y, next.z));
             }
             pos = next;
@@ -1531,9 +1532,10 @@ public final class ElytraFlight {
                 yaw = a.yaw();
                 pitch = a.pitch();
             }
-            vel = kaptainwutax.tungsten.elytra.ElytraPhysics.step(vel, yaw, pitch, left > 0);
+            var st = kaptainwutax.tungsten.elytra.ElytraPhysics.tick(vel, yaw, pitch, left > 0);
+            vel = st.motion();
             if (left > 0) left--;
-            var next = pos.add(vel);
+            var next = pos.add(st.move());
             if (kaptainwutax.tungsten.elytra.ElytraPhysics.blocked(client.world, pos, next)) break;
             pos = next;
         }
@@ -1638,9 +1640,10 @@ public final class ElytraFlight {
                 yaw = a.yaw();
                 pitch = a.pitch();
             }
-            vel = kaptainwutax.tungsten.elytra.ElytraPhysics.step(vel, yaw, pitch, left > 0);
+            var st = kaptainwutax.tungsten.elytra.ElytraPhysics.tick(vel, yaw, pitch, left > 0);
+            vel = st.motion();
             if (left > 0) left--;
-            var next = pos.add(vel);
+            var next = pos.add(st.move());
             if (kaptainwutax.tungsten.elytra.ElytraPhysics.blocked(client.world, pos, next)) { // stopped there
                 vel = net.minecraft.util.math.Vec3d.ZERO;
                 break;
@@ -1701,9 +1704,10 @@ public final class ElytraFlight {
         var vel = realVel(p);
         for (int i = 1; i <= PLAN_SAFE; i++) {
             var a = planAt(ap, k + i);
-            vel = kaptainwutax.tungsten.elytra.ElytraPhysics.step(vel, a.yaw(), a.pitch(), left > 0);
+            var st = kaptainwutax.tungsten.elytra.ElytraPhysics.tick(vel, a.yaw(), a.pitch(), left > 0);
+            vel = st.motion();
             if (left > 0) left--;
-            var next = pos.add(vel);
+            var next = pos.add(st.move());
             if (kaptainwutax.tungsten.elytra.ElytraPhysics.blocked(client.world, pos, next)) return true;
             pos = next;
         }

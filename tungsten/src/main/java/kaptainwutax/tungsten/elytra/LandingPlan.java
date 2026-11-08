@@ -127,14 +127,16 @@ public final class LandingPlan {
                     for (; t < HOLD; t++) {
                         yaw += MathHelper.clamp(MathHelper.wrapDegrees(ty - yaw), -25, 25);
                         pitch += MathHelper.clamp(tp - pitch, -15, 15);
-                        v = ElytraPhysics.step(v, yaw, pitch, rl > 0);
+                        var st = ElytraPhysics.tick(v, yaw, pitch, rl > 0);
+                        v = st.motion();
+                        Vec3d m = st.move();
                         if (rl > 0) rl--;
-                        fd = v.y > -SOFT ? 1 : fd - v.y;
-                        Vec3d n = p.add(v);
+                        fd = v.y > -SOFT ? 1 : fd - m.y;
+                        Vec3d n = p.add(m);
                         if (solid.hits(p, n)) {
                             // Only the way down is blocked: the ground. Anything across is a wall, and
                             // so is a top higher than the spot's (a wall's, a post's): the bot slides off it.
-                            if (v.y >= 0 || p.y > spot.y + 1 || solid.hits(p, new Vec3d(n.x, p.y, n.z))) {
+                            if (m.y >= 0 || p.y > spot.y + 1 || solid.hits(p, new Vec3d(n.x, p.y, n.z))) {
                                 ok = false;
                                 walls++;
                                 break;
@@ -207,9 +209,10 @@ public final class LandingPlan {
             for (int t = 0; t < a.ticks(); t++) {
                 yaw += MathHelper.clamp(MathHelper.wrapDegrees(a.yaw() - yaw), -25, 25);
                 pitch += MathHelper.clamp(a.pitch() - pitch, -15, 15);
-                v = ElytraPhysics.step(v, yaw, pitch, rl > 0);
+                var st = ElytraPhysics.tick(v, yaw, pitch, rl > 0);
+                v = st.motion();
                 if (rl > 0) rl--;
-                p = p.add(v);
+                p = p.add(st.move());
                 out.add(new AirPlan.Tick(p, v, MathHelper.wrapDegrees(yaw), pitch, false));
             }
         }

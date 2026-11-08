@@ -118,9 +118,10 @@ public final class AirPlan {
                         for (; t < HOLD; t++) {
                             yaw += MathHelper.clamp(MathHelper.wrapDegrees(ty - yaw), -25, 25);
                             pitch += MathHelper.clamp(tp - pitch, -15, 15);
-                            v = ElytraPhysics.step(v, yaw, pitch, rl > 0);
+                            var st = ElytraPhysics.tick(v, yaw, pitch, rl > 0);
+                            v = st.motion();
                             if (rl > 0) rl--;
-                            Vec3d n = p.add(v);
+                            Vec3d n = p.add(st.move());
                             boolean off = cor.toGo(n) < 0;
                             if (off || cor.boxHits(p, n, tightStart && s == s0 ? 0 : o.margin)) {
                                 if (s == s0) {
@@ -176,9 +177,10 @@ public final class AirPlan {
             for (int t = 0; t < a.ticks(); t++) {
                 yaw += MathHelper.clamp(MathHelper.wrapDegrees(a.yaw() - yaw), -25, 25);
                 pitch += MathHelper.clamp(a.pitch() - pitch, -15, 15);
-                v = ElytraPhysics.step(v, yaw, pitch, rl > 0);
+                var st = ElytraPhysics.tick(v, yaw, pitch, rl > 0);
+                v = st.motion();
                 if (rl > 0) rl--;
-                p = p.add(v);
+                p = p.add(st.move());
                 out.add(new Tick(p, v, MathHelper.wrapDegrees(yaw), pitch, a.fire() && t == 0));
             }
         }

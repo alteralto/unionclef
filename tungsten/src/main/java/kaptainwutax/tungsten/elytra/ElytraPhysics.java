@@ -32,6 +32,16 @@ public final class ElytraPhysics {
     /** Motion after one gliding tick with this look; the rocket's pull added after, as the rocket
      *  entity ticks after its shooter. */
     public static Vec3d step(Vec3d motion, float yaw, float pitch, boolean rocket) {
+        return tick(motion, yaw, pitch, rocket).motion();
+    }
+
+    /** One gliding tick: {@code move} is how far the player goes in it, the glide alone, and
+     *  {@code motion} the velocity it ends with, a live rocket's pull added. The rocket entity ticks
+     *  after its shooter has moved, so its pull moves the player from the next tick on. Moving by the
+     *  pulled velocity instead put every tick under a rocket 0.17 blocks off (median, max 0.84) on a
+     *  logged 300-block flight, against 0.0000 this way, and a planned path ran ahead of the real one
+     *  by the sum of the pulls (08.11). */
+    public static Tick tick(Vec3d motion, float yaw, float pitch, boolean rocket) {
         Vec3d look = look(yaw, pitch);
         double mx = motion.x, my = motion.y, mz = motion.z;
         float pr = pitch * MathHelper.RADIANS_PER_DEGREE;
@@ -59,12 +69,16 @@ public final class ElytraPhysics {
         mx *= 0.99f;
         my *= 0.98f;
         mz *= 0.99f;
+        Vec3d move = new Vec3d(mx, my, mz);
         if (rocket) {
             mx += look.x * 0.1 + (look.x * 1.5 - mx) * 0.5;
             my += look.y * 0.1 + (look.y * 1.5 - my) * 0.5;
             mz += look.z * 0.1 + (look.z * 1.5 - mz) * 0.5;
         }
-        return new Vec3d(mx, my, mz);
+        return new Tick(move, rocket ? new Vec3d(mx, my, mz) : move);
+    }
+
+    public record Tick(Vec3d move, Vec3d motion) {
     }
 
     /** Where a glide goes over the next ticks holding yaw and pitch, a rocket pulling for the
@@ -77,8 +91,9 @@ public final class ElytraPhysics {
         int n = 1;
         boolean hit = false;
         for (int i = 0; i < ticks; i++) {
-            motion = step(motion, yaw, pitch, i < rocketTicks);
-            Vec3d next = pos.add(motion);
+            Tick t = tick(motion, yaw, pitch, i < rocketTicks);
+            motion = t.motion();
+            Vec3d next = pos.add(t.move());
             if (world != null && blocked(world, pos, next)) {
                 hit = true;
                 break;
