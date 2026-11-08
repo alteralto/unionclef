@@ -202,6 +202,37 @@ def in_maze(p, compact=False):
     return 600 < x < x1 and F <= y < F + 30 and mz - 21 < z < mz + 21
 
 
+def hall_unloaded(compact=True):
+    """Chunks of the maze hall the bot's client does not have yet: one point of the glass floor in each
+    chunk, read from the client's world (an unloaded chunk reads as air). A route searched before the
+    hall is in takes the missing chunks for walls."""
+    mz, x1 = (MAZE2_Z, MAZE2_X1) if compact else (MAZE_Z, 840)
+    z0, z1 = mz - 21, mz + 21
+    missing = []
+    for cx in range(600 >> 4, (x1 >> 4) + 1):
+        for cz in range(z0 >> 4, (z1 >> 4) + 1):
+            x = min(max(cx * 16 + 8, 600), x1)
+            z = min(max(cz * 16 + 8, z0), z1)
+            if mcp("getBlockAt", {"x": x, "y": F, "z": z}).get("is_air") != "false":
+                missing.append((cx, cz))
+    return missing
+
+
+def wait_hall_loaded(compact=True, timeout=30):
+    """Wait till the client has every chunk of the hall; how long it took and what is still missing."""
+    t0 = time.time()
+    missing = hall_unloaded(compact)
+    while missing and time.time() - t0 < timeout:
+        time.sleep(0.5)
+        missing = hall_unloaded(compact)
+    return {"hallWaitS": round(time.time() - t0, 1), "hallMissing": len(missing)}
+
+
+def server_tick():
+    """The server's tick rate and average milliseconds per tick (/tick query), as text."""
+    return " ".join(cmd("tick query")[0].split())
+
+
 def maze_compact():
     z0, z1 = MAZE2_Z - 21, MAZE2_Z + 21
     cmd("forceload add 540 -360 760 -280",

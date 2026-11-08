@@ -15,8 +15,10 @@ import bench
 from bench import F, RINGS, Video, dist, mcp, reset, watch
 
 
-def fly_test(x0, z0, x1, z1, hotbar=True, low=False, seconds=90, yaw=-90):
+def fly_test(x0, z0, x1, z1, hotbar=True, low=False, seconds=90, yaw=-90, before=None):
+    """before: called between the reset and the start; what it returns goes into the result as "before"."""
     reset(x0, z0, rockets_in_hotbar=hotbar, yaw=yaw)
+    pre = before() if before else None
     args = {"x": x1, "y": F, "z": z1}
     if low:
         args["low"] = True
@@ -24,7 +26,7 @@ def fly_test(x0, z0, x1, z1, hotbar=True, low=False, seconds=90, yaw=-90):
     st, path = watch("flyStatus", seconds)
     end = path[-1] if path else [0, 0, 0]
     ok = st.get("phase") == "done" and dist(end, x1, z1) < 30 and (st.get("rocketsUsed") or 0) > 0
-    return ok, {"status": st, "end": end, "off_target": round(dist(end, x1, z1), 1), "path": path}
+    return ok, {"status": st, "end": end, "off_target": round(dist(end, x1, z1), 1), "path": path, "before": pre}
 
 
 def t_flat_hotbar():
