@@ -1241,7 +1241,17 @@ public final class ElytraFlight {
             finalX = tx;
             finalY = landingY(client);
             finalZ = tz;
-            planGoal = new net.minecraft.util.math.Vec3d(finalX, finalY + 10, finalZ);
+            // 10 over the spot, but under whatever roof is over it: a forest's 9 blocks up put the goal
+            // in its leaves, the cells made for the nearest open air, over the roof, and the bot came
+            // in under it from the side, for the landing only (08.11).
+            double gy = finalY + 10;
+            for (int y = (int) Math.floor(finalY) + 2; y <= finalY + 12; y++) {
+                if (solidAt(client, (int) Math.floor(finalX), y, (int) Math.floor(finalZ))) {
+                    gy = Math.min(gy, Math.max(finalY + 1, y - 2.5));
+                    break;
+                }
+            }
+            planGoal = new net.minecraft.util.math.Vec3d(finalX, gy, finalZ);
             searchState = "searching";
             planBest = Double.MAX_VALUE;
             planBestTick = ticks;
